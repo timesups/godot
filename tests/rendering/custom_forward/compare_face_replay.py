@@ -1,0 +1,45 @@
+"""E689 visible-pixel HDR comparison against independent before/after exports."""
+import argparse
+import json
+from pathlib import Path
+import numpy as np
+
+
+def decode(words):
+    channels = []
+    for shift, bits in [(0, 6), (11, 6), (22, 5)]:
+        value = (words >> shift) & ((1 << (bits + 5)) - 1)
+        e = value >> bits
+        m = value & ((1 << bits) - 1)
+        channels.append(np.where(e == 0, np.ldexp(m.astype(float), 1-15-bits), np.ldexp(1+m.astype(float)/(1 << bits), e.astype(int)-15)))
+    return np.stack(channels, axis=-1)
+
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('evidence', type=Path)
+parser.add_argument('--prepare', action='store_true')
+args = parser.parse_args()
+root = args.evidence
+before = np.frombuffer((root/'fresh-e684-133342.dds').read_bytes(), '<u4', offset=148).reshape(1440, 2560)
+after = np.frombuffer((root/'fresh-e689-133342.dds').read_bytes(), '<u4', offset=148).reshape(1440, 2560)
+mask = before != after
+assert mask.sum() == 5390
+if args.prepare:
+    (root/'e689-mask.bin').write_bytes((mask.astype('u1')*255).tobytes())
+    print('E689_MASK_OK pixels=5390')
+else:
+    actual = np.fromfile(root/'e689-gpu-hdr.bin', '<u4').reshape(1440, 2560)[mask]
+    raw = np.fromfile(root/'e689-gpu-float.bin', '<f4').reshape(1440, 2560, 4)[mask]
+    error = np.abs(decode(actual)-decode(after[mask]))
+    steps = np.stack([np.abs(((actual >> s) & ((1 << b)-1)).astype(int)-((after[mask] >> s) & ((1 << b)-1)).astype(int)) for s, b in [(0, 11), (11, 11), (22, 10)]], axis=-1)
+    report = {'pixels': int(mask.sum()), 'exact_pixels': int((actual == after[mask]).sum()),
+              'mae': float(error.mean()), 'max': float(error.max()), 'max_encoded_steps': int(steps.max()),
+              'within_one_step': float((steps <= 1).mean()), 'missing_pixels': int((raw[:, 3] != 1).sum()),
+              'scope': 'E689 captured visible subset, test-only depth/mask; not full visibility reconstruction'}
+    (root/'e689-gpu-validation.json').write_text(json.dumps(report, indent=2))
+    print(json.dumps(report, indent=2))
+    assert np.isfinite(raw).all() and np.all(raw[:, 3] == 1)
+    # Fixed RTX 3050 capture baseline; reports remaining differences explicitly.
+    assert report['exact_pixels'] >= 5088
+    assert report['mae'] <= 0.000385
+    assert report['max'] <= 0.046875 and report['max_encoded_steps'] <= 5

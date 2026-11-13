@@ -1551,6 +1551,10 @@ Error ShaderCompiler::compile(RSE::ShaderMode p_mode, const String &p_code, Iden
 	info.base_varying_index = actions.base_varying_index;
 
 	Error err = parser.compile(p_code, info);
+	if (err == OK && parser.get_shader()->render_modes.has("custom_character")) {
+		ERR_FAIL_COND_V_MSG(!actions.render_mode_defines.has("custom_character"), ERR_UNAVAILABLE,
+				"The custom_character render mode requires the custom_forward renderer.");
+	}
 
 	if (err != OK) {
 		Vector<ShaderLanguage::FilePosition> include_positions = parser.get_include_positions();

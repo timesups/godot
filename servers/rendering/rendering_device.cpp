@@ -8381,6 +8381,8 @@ Error RenderingDevice::initialize(RenderingContextDriver *p_context, DisplayServ
 		String rendering_method;
 		if (OS::get_singleton()->get_current_rendering_method() == "mobile") {
 			rendering_method = "Forward Mobile";
+		} else if (OS::get_singleton()->get_current_rendering_method() == "custom_forward") {
+			rendering_method = "Custom Forward";
 		} else {
 			rendering_method = "Forward+";
 		}

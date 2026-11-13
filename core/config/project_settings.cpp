@@ -106,6 +106,7 @@ const PackedStringArray ProjectSettings::_get_supported_features() {
 
 #ifdef RD_ENABLED
 	features.append("Forward Plus");
+	features.append("Custom Forward");
 	features.append("Mobile");
 #endif
 

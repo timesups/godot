@@ -497,7 +497,7 @@ void ProjectDialog::_renderer_selected() {
 
 	bool rd_error = false;
 
-	if (renderer_type == "forward_plus") {
+	if (renderer_type == "forward_plus" || renderer_type == "custom_forward") {
 		renderer_info->set_text(
 				String::utf8("•  ") + TTR("Supports desktop platforms only.") +
 				String::utf8("\n•  ") + TTR("Advanced 3D graphics available.") +
@@ -581,6 +581,8 @@ void ProjectDialog::ok_pressed() {
 
 		if (renderer_type == "forward_plus") {
 			project_features.push_back("Forward Plus");
+		} else if (renderer_type == "custom_forward") {
+			project_features.push_back("Custom Forward");
 		} else if (renderer_type == "mobile") {
 			project_features.push_back("Mobile");
 		} else if (renderer_type == "gl_compatibility") {
@@ -1133,6 +1135,19 @@ ProjectDialog::ProjectDialog() {
 	rs_button->connect(SceneStringName(pressed), callable_mp(this, &ProjectDialog::_renderer_selected));
 	rvb->add_child(rs_button);
 	if (default_renderer_type == "forward_plus") {
+		rs_button->set_pressed(true);
+	}
+	rs_button = memnew(CheckBox);
+	rs_button->set_button_group(renderer_button_group);
+	rs_button->set_text(TTRC("Custom Forward"));
+	rs_button->set_accessibility_name(TTRC("Renderer:"));
+#ifndef RD_ENABLED
+	rs_button->set_disabled(true);
+#endif
+	rs_button->set_meta(SNAME("rendering_method"), "custom_forward");
+	rs_button->connect(SceneStringName(pressed), callable_mp(this, &ProjectDialog::_renderer_selected));
+	rvb->add_child(rs_button);
+	if (default_renderer_type == "custom_forward") {
 		rs_button->set_pressed(true);
 	}
 	rs_button = memnew(CheckBox);
