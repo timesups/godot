@@ -46,7 +46,27 @@ Debug/Release GodotSharp、编辑器工具及 `4.7.3-rc` 本地 NuGet 包。
 初次 C# probe 的 `mono` 特性标签不适用于本分支，改用真实 `CSharpScript` 类型；
 首次编辑器扫描把验证目录 `.obj` 当模型，项目通过 `artifacts/.gdignore` 排除产物。
 失败日志保留，最终检查全部通过。绑定生成器的重名方法警告和包 README 提示
-未阻断构建；本轮没有修改引擎渲染算法或绑定生成器。导出模板尚未构建。
+未阻断构建；该轮没有修改引擎渲染算法或绑定生成器。
+
+## Windows x64 .NET 导出模板（2026-11-16）
+
+已构建 `bin/godot.windows.template_debug.x86_64.mono.exe`、
+`bin/godot.windows.template_release.x86_64.mono.exe` 及两种 console wrapper。
+构建入口支持 `--target templates`（仅模板）和 `--target all`（编辑器、绑定、包与模板）。
+模板源码基于 `b2a21c0746`；相对已验证编辑器的 `5a924a3d67` 仅有构建入口和文档变化，
+渲染/API 源码一致。本轮也未修改 C++/GLSL 或绑定接口。
+
+证据目录 `.renderdoc-analysis/csharp-export/`：
+- `build-templates.log`：两套模板成功，首次构建分别约16分22秒和16分47秒。
+- `full/run.json`：Endfield 原有38项完整回归全部通过。
+- `final/run.json`：C# 构建、编辑器双管线、导入、Debug/Release 导出及搬迁后四组合运行，共10项通过。
+- `preservation-check.json`：888个历史基线文件及现有 .NET 编辑器哈希未变。
+
+实际导出程序通过模板类型、随包 .NET 运行时位置、真实 GPU 像素检查；
+复现方式见 Endfield `tools/export_csharp.py` 与 README。验证内容是现有 C# smoke 场景，
+没有分发外部角色素材。Windows x64 / Vulkan 之外的平台与完整角色内容打包尚未验证。
+导出工具直接等待 editor EXE，并禁用持久化构建服务器，避免 console wrapper
+等待 Roslyn 子进程不退出；修正后 Debug 和最终双版本流程均无需人工干预。
 
 ## 后续项目工作
 
