@@ -1073,7 +1073,7 @@ layout(location = 2) out vec2 motion_vector;
 
 #include "../scene_forward_aa_inc.glsl"
 
-#if !defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
+#if !defined(MODE_RENDER_DEPTH) && (!defined(MODE_UNSHADED) || defined(CUSTOM_LOCAL_SHADOW_USED))
 
 // Default to SPECULAR_SCHLICK_GGX.
 #if !defined(SPECULAR_DISABLED) && !defined(SPECULAR_SCHLICK_GGX) && !defined(SPECULAR_TOON)
@@ -1082,7 +1082,9 @@ layout(location = 2) out vec2 motion_vector;
 
 #include "../scene_forward_lights_inc.glsl"
 
+#ifndef MODE_UNSHADED
 #include "../scene_forward_gi_inc.glsl"
+#endif
 
 #endif //!defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
 
@@ -1179,6 +1181,19 @@ uint cluster_get_range_clip_mask(uint i, uint z_min, uint z_max) {
 }
 
 #endif //!MODE_RENDER DEPTH
+
+#ifdef CUSTOM_LOCAL_SHADOW_USED
+#ifndef MODE_RENDER_DEPTH
+#include "character_shadow_inc.glsl"
+#else
+float custom_forward_directional_shadow(uvec2 light_id, vec3 vertex, vec3 normal) {
+	return 1.0;
+}
+float custom_forward_local_shadow(uvec2 light_id, bool is_spot, vec3 vertex, vec3 normal) {
+	return 1.0;
+}
+#endif
+#endif
 
 #if defined(MODE_RENDER_NORMAL_ROUGHNESS) || defined(MODE_RENDER_MATERIAL)
 // https://advances.realtimerendering.com/s2010/Kaplanyan-CryEngine3(SIGGRAPH%202010%20Advanced%20RealTime%20Rendering%20Course).pdf

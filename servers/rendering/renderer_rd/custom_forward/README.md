@@ -196,8 +196,8 @@ does not replace their accuracy and ordinary-material regression checks.
 Run `debug_full_character.bat` from the repository root to validate the local
 exports and open the assembled character. Pass `--albedo-only` to show base
 color for every part; `--smoke` as the first argument exits after validation.
-The default uses the E674 and E689 materials on their
-original face-detail and face draws; all other draws deliberately use a base-color
+The default uses the E674, E689, E694 and E704 materials on their
+original face-detail, face, clothes and hair draws; all other draws deliberately use a base-color
 diagnostic shader through `custom_character`. This is a geometry/material
 inspection fixture, not a claim of complete lighting reconstruction.
 
@@ -216,9 +216,9 @@ model orientation and the full base mip chain.
 | 679 / 462 | Iris | 186177 | Base color; distinct iris shader |
 | 684 / 473 | Accessories | 187399 | Base color; normal map 187429 retained |
 | 689 / 478 | Face | 185716 | E689 SDF face lighting; measured capture differences remain |
-| 694 / 483 | Clothes | 187399 | Base color; normal map 187429 retained |
+| 694 / 483 | Clothes | 187399 | Measured dry lighting, normal map, specular and environment reflection |
 | 699 / 488 | Ears | 185700 | Base color; distinct ear shader |
-| 704 / 493 | Hair | 185700 | Base color; auxiliary texture 186605 retained |
+| 704 / 493 | Hair | 185700 | Measured opaque dual-normal, dual-lobe anisotropic lighting and strand noise |
 
 The RenderDoc MCP export metadata, fragment SPIR-V, texture bindings and SHA256
 of every fixture file are retained in the local evidence directory. Run:
@@ -246,7 +246,7 @@ character; additional material lighting is still pending per the table above.
 
 `materials/face.gdshader` adds the face-specific path while keeping E674's
 shader and regression unchanged. Copy it with both `face_lighting.gdshaderinc`
-and `character_lighting.gdshaderinc` into a project. Required textures:
+and `character_lighting.gdshaderinc`, plus `face_shadow.gdshaderinc`, into a project. Required textures:
 
 | Uniform | Captured resource | Color space / purpose |
 | --- | --- | --- |
@@ -266,19 +266,37 @@ retain the captured head orientation; the fixture uses its exported transform.
 This is the captured dry dielectric specialization: makeup weight is zero,
 analytic specular is zero, and wetness/snow/probe effects are not implemented.
 Main-light tint also modulates the environment with E689's captured tint.
+The environment color is CharacterParams3 (1.2604043, 0.73959565, 0.73959565),
+not E674's CharacterParams2. This distinction matters in AO-darkened areas.
 Scene `face_ao` is an explicit input, default 1; the replay instead reads the
 captured screen AO texture. Local point/spot parameters and shadow factors are
 explicit arrays documented in the shader. No automatic Light3D/shadow mapping
-has been added. Replay spot shadows currently use 1, so remaining errors must
-not be interpreted as proven sampler-only differences.
+has been added. An optional reversed-depth shadow atlas is now supported:
+enable `shadow_atlas_enabled`, bind a linear single-channel depth texture,
+set the relevant `local_shadow_enabled` entries, and provide per-light
+`local_shadow_matrices`, `local_shadow_rects` and
+`local_shadow_bias`. Matrices map the scene's world coordinates to 0..1 shadow
+coordinates; rects contain atlas min/max UVs. The filter uses the captured 5x5
+tent weights, nine bilinear depth comparisons, and radial/normal bias. Modes
+1 and 3 accept atlas shadows; mode 0 stays unshadowed as in the capture.
+Per-light enable is independent of strength: strength zero means full visibility,
+whereas a missing/disabled shadow slot selects mode 1's radial fallback.
+The fixture's recentered world coordinates require correspondingly adjusted
+matrices; raw capture matrices should only be used with raw capture positions.
 
 The dedicated GPU replay shares production face-lighting functions and compares
 all 5,390 changed E689 pixels against independent fresh E684/E689 HDR exports.
 Its mask/depth filtering is test-only and does not recreate original visibility.
-On RTX 3050, 5,090 pixels match exactly (94.43%), linear HDR MAE is 0.00038184,
-maximum absolute error is 0.046875, and maximum encoded channel error is 5 steps.
+On RTX 3050, 5,266 pixels match exactly (97.70%), linear HDR MAE is 0.00008890,
+maximum absolute error is 0.015625, and all encoded channel errors are at most 1 step.
 These are measured bounds, not pixel parity. The comparison enforces these
-bounds (at least 5,088 exact pixels) to catch regressions.
+bounds (at least 5,260 exact pixels and MAE <= 0.00009) to catch regressions.
+It now uses the captured 6144x4096 D16 atlas and shadow slots 40/41 rather than
+assuming full visibility. Shader Debug at (1298,1105) measured light 5's shadow
+factor as 0.8237022. A second debug point (1336,1141) isolated the environment
+color mismatch: base/mask/SDF/surface values agreed while irradiance differed.
+Manual bilinear comparisons and shader arithmetic may still differ from the
+original hardware comparison sampler; bitwise parity is not claimed.
 
 ```powershell
 .\.venv\Scripts\python.exe tests/rendering/custom_forward/compare_face_replay.py .renderdoc-analysis/endfield-frame37917/gbuffer-materials --prepare
@@ -288,4 +306,71 @@ bounds (at least 5,088 exact pixels) to catch regressions.
 
 `full_character.gd` also checks that E689 responds to left/right SDF lighting,
 AO, and local modes 0/1/3, and turns black when its own lighting is disabled.
+It also checks the optional atlas using all-blocked and all-visible depth maps.
 This integration test complements, rather than replaces, the capture replay.
+For diagnosis, pass `--diagnostics` to `face_replay.gd`: it writes separate
+`e689-diagnostic-*` buffers whose base/uv-dx/dy-primitive outputs contain face
+mask/SDF/surface color respectively. Normal regression outputs remain intact.
+
+### E694 clothes surface inspection
+
+See [CAPTURE_E694_SURFACE.md](CAPTURE_E694_SURFACE.md) for confirmed texture
+channels, independent G-buffer/Shader Debug evidence, and replay commands.
+`debug_full_character.bat --clothes-surface` enables an independent clothes
+surface material with base, normal, parameter, F0 and diffuse inspection views.
+This inspection flag replaces the default clothes lighting with surface views.
+The surface replay matches base and normal at 215599/215604 pixels each; five
+known differences remain explicitly gated in that original surface test.
+
+### E694 clothes lighting
+
+`materials/clothes.gdshader` now supplies the default clothes material. Its shared
+`clothes_lighting.gdshaderinc` implements the captured dry specialization:
+main/view ramp, shadow/AO modulation, analytic specular and lookup, BC6 cubemap
+reflection with nearest-mip selection, emission, and local modes 0/1/3/4.
+Light parameters and optional shadow atlas are explicit inputs, as for E689;
+automatic Godot Light3D binding is not implemented.
+
+The new `clothes_replay.gd` and `compare_clothes_replay.py` retain the original
+surface test and compare final HDR against fresh E689/E694 exports. Reversed
+depth testing between clothes triangles fixes the five surface-test visibility
+differences. On RTX 3050, 215051/215604 pixels match exactly (99.7435%), MAE is
+2.05976e-6, maximum error is 0.0205078125. Twelve pixels exceed one encoded
+channel step, with a maximum of 19 steps; these remain in the comparison.
+Shadow-edge precision differences remain, so this is measured reconstruction,
+not bitwise parity. See CAPTURE_E694_SURFACE.md for evidence and commands.
+
+### E704 hair lighting
+
+`materials/hair.gdshader` is now the default E704 material in the full-character
+fixture. It shares dual-normal, dual-lobe anisotropic lighting and stripe noise
+with the independent HDR replay. See [CAPTURE_E704_HAIR.md](CAPTURE_E704_HAIR.md)
+for texture channels, source Shader Debug evidence, commands and limits.
+
+The captured visible subset matches at 20634/20660 pixels exactly (99.8742%),
+MAE 1.87497e-6; all channel errors are <=1 HDR encoded step. The test pins
+reference hashes and enforces these measured bounds, plus independent surface,
+specular and secondary-normal checks. Existing material and post tests remain.
+
+The default material still accepts explicit inputs. The optional
+`debug_full_character.bat --live-lights` now uses live depth rim visibility and
+Directional/Omni/SpotLight3D bindings for E704. Hair stays opaque via a depth
+prepass; its color pass is scheduled after opaque geometry because it reads
+screen depth. See [LIVE_CHARACTER.md](LIVE_CHARACTER.md) for setup, tested
+configurations and limits (including shadows and transparent occluders).
+
+### Engine local shadows for live E704
+
+The live hair variant now resolves Omni/Spot shadow maps by complete light RID,
+including projection/bias/filter/opacity from engine light data. It preserves
+mode 0's unshadowed behavior and validates moving shadows-only casters, disabled
+shadows, zero opacity, coincident lights and list reordering. Rebuild the engine
+before using this version of `--live-lights`. See
+[ENGINE_CHARACTER_SHADOWS.md](ENGINE_CHARACTER_SHADOWS.md) for the interface and
+scope. Live E704 also consumes directional cascades by full main-light RID, with
+split blending, distance fade, bias and opacity. GPU tests cover 1/2/4 cascades,
+camera movement and coincident directional lights. E689/E694 now opt in with `CHARACTER_ENGINE_SHADOWS`, and the live fixture binds
+all three materials. Face external visibility affects direct irradiance once,
+preserving SDF ramp shading and environment. Local shadows gate the completed
+face/clothes contribution so SDF highlights cannot bypass occlusion. See
+`ENGINE_CHARACTER_SHADOWS.md` for the tested composition and remaining limits.

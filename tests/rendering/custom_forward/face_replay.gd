@@ -2,6 +2,7 @@ extends SceneTree
 
 var rd: RenderingDevice
 var evidence: String
+var diagnostics := false
 var resources: Array[RID] = []
 
 func _initialize() -> void:
@@ -52,15 +53,20 @@ func run() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--evidence="):
 			evidence = a.trim_prefix("--evidence=")
+		elif a == "--diagnostics":
+			diagnostics = true
 	assert(not evidence.is_empty())
 	rd = RenderingServer.create_local_rendering_device()
 	assert(rd != null)
 	var src := RDShaderSource.new()
 	src.source_vertex = FileAccess.get_file_as_string("res://face_replay.vert")
 	src.source_fragment = FileAccess.get_file_as_string("res://face_replay.frag")
+	if diagnostics:
+		src.source_fragment = src.source_fragment.replace("// FACE_DIAGNOSTICS", "sampled_base=mask4; uv_dx=sdf; dy_primitive=vec4(surface_color,1);")
 	var shared_path := ProjectSettings.globalize_path("res://../../../servers/rendering/renderer_rd/custom_forward/materials/character_lighting.gdshaderinc")
 	src.source_fragment = src.source_fragment.replace("// CHARACTER_LIGHTING_SHARED", FileAccess.get_file_as_string(shared_path))
 	src.source_fragment = src.source_fragment.replace("// FACE_LIGHTING_SHARED", FileAccess.get_file_as_string(shared_path.get_base_dir().path_join("face_lighting.gdshaderinc")))
+	src.source_fragment = src.source_fragment.replace("// FACE_SHADOW_SHARED", FileAccess.get_file_as_string(shared_path.get_base_dir().path_join("face_shadow.gdshaderinc")))
 	var spv := rd.shader_compile_spirv_from_source(src)
 	assert(spv.compile_error_vertex.is_empty(), spv.compile_error_vertex)
 	assert(spv.compile_error_fragment.is_empty(), spv.compile_error_fragment)
@@ -77,19 +83,20 @@ func run() -> void:
 		dds("e689-texture-37722", RenderingDevice.DATA_FORMAT_BC7_UNORM_BLOCK, 9),
 		dds("e689-texture-4874", RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM),
 		dds("e689-texture-37745", RenderingDevice.DATA_FORMAT_BC7_UNORM_BLOCK, 10),
-		dds("e689-texture-173767", RenderingDevice.DATA_FORMAT_R8G8_UNORM)
+		dds("e689-texture-173767", RenderingDevice.DATA_FORMAT_R8G8_UNORM),
+		dds("e689-shadow-atlas", RenderingDevice.DATA_FORMAT_R16_UNORM)
 	]
 	var uniforms: Array[RDUniform] = []
-	for binding in range(14):
+	for binding in range(16):
 		var u := RDUniform.new()
 		u.binding = binding
-		if (binding >= 1 and binding <= 5) or binding >= 10:
+		if (binding >= 1 and binding <= 5) or (binding >= 10 and binding <= 14):
 			u.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
 			u.add_id(wrap if binding in [1, 10, 12] else (clamp_aniso if binding == 2 else clamp_linear))
 			u.add_id(textures[binding - 1 if binding <= 5 else binding - 5])
 		else:
 			u.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-			var names := {0: "e689-postvs-vertex.bin", 6: "e689-cb2.bin", 7: "e689-cb0.bin", 8: "e689-record0-transform.bin", 9: "e674-light-binning.bin"}
+			var names := {0: "e689-postvs-vertex.bin", 6: "e689-cb2.bin", 7: "e689-cb0.bin", 8: "e689-record0-transform.bin", 9: "e674-light-binning.bin", 15: "e689-cb1.bin"}
 			u.add_id(buffer(names[binding]))
 		uniforms.append(u)
 	var set := keep(rd.uniform_set_create(uniforms, shader, 0))
@@ -120,6 +127,8 @@ func run() -> void:
 	rd.sync()
 	for pair in [["e689-gpu-hdr.bin", output], ["e689-gpu-float.bin", raw], ["e689-gpu-base.bin", base], ["e689-gpu-uv-dx.bin", uv_dx], ["e689-gpu-dy-primitive.bin", dy_primitive]]:
 		var filename: String = pair[0]
+		if diagnostics:
+			filename = filename.replace("e689-gpu-", "e689-diagnostic-")
 		FileAccess.open(evidence.path_join(filename), FileAccess.WRITE).store_buffer(rd.texture_get_data(pair[1], 0))
 	resources.reverse()
 	for rid in resources:

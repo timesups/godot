@@ -61,7 +61,7 @@ def prepare(root):
         parts.append({"event": event, "gbuffer_event": gbuffer, "name": name,
                       "variant": variant, "pixel_shader": pixel_shader, "base_texture": texture,
                       "auxiliary_textures": auxiliary,
-                      "material_status": "validated_lighting" if event == 674 else ("reconstructed_e689_measured" if event == 689 else "base_color_diagnostic_only"),
+                      "material_status": "validated_lighting" if event == 674 else ("reconstructed_e689_measured" if event == 689 else ("reconstructed_e694_measured" if event == 694 else ("reconstructed_e704_measured" if event == 704 else "base_color_diagnostic_only"))),
                       "vertex_count": len(vertices), "index_count": len(indices),
                       "vertex_stride": m["vertexByteStride"], "vertex_offset": m["vertexByteOffset"],
                       "index_stride": m["indexByteStride"], "index_offset": m["indexByteOffset"],
@@ -77,6 +77,18 @@ def prepare(root):
             retain(f"e689-texture-{tid}-mip{mip}.dds")
     for mip in range(1, 11):
         retain(f"texture-185716-mip{mip}.dds")
+    for tid, levels in [(187399, 12), (187402, 12), (187429, 12), (185914, 11), (118829, 1), (39217, 1)]:
+        for mip in range(levels):
+            suffix = f"-mip{mip}" if mip else ""
+            retain(f"e694-texture-{tid}{suffix}.dds")
+    retain("e704-record0-transform.bin")
+    for tid, levels in [(185700,11), (186605,11), (187392,11), (173100,11), (37600,10), (188148,1), (186747,1)]:
+        for mip in range(levels):
+            suffix = f"-mip{mip}" if mip else ""
+            retain(f"e704-texture-{tid}{suffix}.dds")
+    for face in range(6):
+        for mip in range(8):
+            retain(f"e694-cube8600-face{face}-mip{mip}.dds")
     manifest = {"capture": "EndField-frame37917.rdc", "frame": 37917,
                 "coordinate_origin": [-300.0, 300.0, -300.0], "parts": parts, "files": files,
                 "scope": "Eight paired character draws, captured posed mesh; not recovered rig or full material parity."}

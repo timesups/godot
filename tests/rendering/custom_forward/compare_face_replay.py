@@ -32,14 +32,18 @@ else:
     raw = np.fromfile(root/'e689-gpu-float.bin', '<f4').reshape(1440, 2560, 4)[mask]
     error = np.abs(decode(actual)-decode(after[mask]))
     steps = np.stack([np.abs(((actual >> s) & ((1 << b)-1)).astype(int)-((after[mask] >> s) & ((1 << b)-1)).astype(int)) for s, b in [(0, 11), (11, 11), (22, 10)]], axis=-1)
-    report = {'pixels': int(mask.sum()), 'exact_pixels': int((actual == after[mask]).sum()),
+    worst = np.argsort(error.max(axis=1))[-10:][::-1]
+    ys, xs = np.nonzero(mask)
+    report = {'status': 'measured_not_pixel_identical', 'pixels': int(mask.sum()), 'exact_pixels': int((actual == after[mask]).sum()),
               'mae': float(error.mean()), 'max': float(error.max()), 'max_encoded_steps': int(steps.max()),
               'within_one_step': float((steps <= 1).mean()), 'missing_pixels': int((raw[:, 3] != 1).sum()),
-              'scope': 'E689 captured visible subset, test-only depth/mask; not full visibility reconstruction'}
+              'scope': 'E689 captured visible subset, test-only depth/mask; not full visibility reconstruction',
+              'worst_pixels': [{'xy': [int(xs[i]), int(ys[i])], 'encoded_steps': steps[i].tolist(),
+                                'reference': decode(after[mask][i]).tolist(), 'candidate': decode(actual[i]).tolist()} for i in worst]}
     (root/'e689-gpu-validation.json').write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2))
     assert np.isfinite(raw).all() and np.all(raw[:, 3] == 1)
     # Fixed RTX 3050 capture baseline; reports remaining differences explicitly.
-    assert report['exact_pixels'] >= 5088
-    assert report['mae'] <= 0.000385
-    assert report['max'] <= 0.046875 and report['max_encoded_steps'] <= 5
+    assert report['exact_pixels'] >= 5260
+    assert report['mae'] <= 0.00009
+    assert report['max'] <= 0.015625 and report['max_encoded_steps'] <= 1

@@ -1,8 +1,21 @@
 shader_type spatial;
 render_mode custom_character, cull_disabled;
 
+#ifdef CHARACTER_ENGINE_SHADOWS
+render_mode custom_character_shadows;
+uniform bool engine_directional_shadows_enabled = true;
+uniform bool engine_local_shadows_enabled = true;
+uniform uint main_shadow_id_low = 0u;
+uniform uint main_shadow_id_high = 0u;
+uniform uint local_shadow_id_low[8];
+uniform uint local_shadow_id_high[8];
+uniform bool local_shadow_is_spot[8];
+#endif
+
+
 #include "character_lighting.gdshaderinc"
 #include "face_lighting.gdshaderinc"
+#include "face_shadow.gdshaderinc"
 
 uniform sampler2D base_map : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D material_lut : source_color, filter_linear, repeat_disable;
@@ -14,7 +27,8 @@ uniform float mip_bias = -1.0;
 uniform vec3 main_direction = vec3(-0.14726211, 0.52991927, 0.83516431);
 uniform vec3 main_color = vec3(1.0, 0.9136826, 0.91132075);
 uniform float main_energy = 1.6243867874;
-uniform vec3 environment_color = vec3(0.8490771, 0.8957686, 1.150923);
+// E689 uses CharacterParams3; E674 uses CharacterParams2 instead.
+uniform vec3 environment_color = vec3(1.2604043, 0.73959565, 0.73959565);
 uniform vec3 environment_direction = vec3(0.0, 1.0, 0.0);
 uniform vec3 environment_curve = vec3(0.15, 1.5, 0.5);
 uniform float environment_strength = 0.28772246837615967;
@@ -35,6 +49,14 @@ uniform vec4 local_parameters[8];
 // spot scale=0 selects a point light. Defaults require caller initialization.
 uniform vec4 local_attenuation[8];
 uniform vec3 local_directions[8];
+// Optional reversed-depth atlas adapter. Matrices take scene world positions;
+// rect=(min_uv,max_uv), bias=(radial bias, normal bias/5, unused, strength).
+uniform bool shadow_atlas_enabled = false;
+uniform sampler2D shadow_atlas : filter_nearest, repeat_disable;
+uniform bool local_shadow_enabled[8];
+uniform mat4 local_shadow_matrices[8];
+uniform vec4 local_shadow_rects[8];
+uniform vec4 local_shadow_bias[8];
 
 varying vec3 face_world;
 varying vec3 face_normal;
@@ -67,8 +89,17 @@ void fragment() {
 	vec3 light_normal;
 	vec3 diffuse_base;
 	vec2 specular_uv = UV + (inverse_basis * view).xy * specular_view_offset;
+	// SDF already shapes the ramp. External visibility affects direct irradiance
+	// once, not the ramp, AO, environment or the final combined result.
+	float main_visibility = 1.0;
+#ifdef CHARACTER_ENGINE_SHADOWS
+	if (engine_directional_shadows_enabled) {
+		main_visibility = custom_forward_directional_shadow(uvec2(main_shadow_id_low,main_shadow_id_high),
+				(VIEW_MATRIX*vec4(face_world,1.0)).xyz,normalize(mat3(VIEW_MATRIX)*n)*(FRONT_FACING?1.0:-1.0));
+	}
+#endif
 	vec3 result = face_lighting(base, graded, mask, sdf, ramp, texture(face_specular, specular_uv, mip_bias).rgb,
-			n, view, radial, camera_z, local_light, basis, face_ao, main_color * main_energy, environment_color,
+			n, view, radial, camera_z, local_light, basis, face_ao, main_color * main_energy * main_visibility, environment_color,
 			environment_direction, environment_curve, environment_strength, character_exposure,
 			shadow_strength, rim_tint, rim_strength, surface_color, light_normal, diffuse_base);
 	for (int i = 0; i < min(local_light_count, 8); i++) {
@@ -84,13 +115,32 @@ void fragment() {
 		int mode = int(local_colors[i].w);
 		vec4 p = local_parameters[i];
 		float shadow = attenuation_parameters.w;
+		// Gate the completed contribution: face_local_one can otherwise restore
+		// light through its SDF max() branch or its artistic shadow-side floor.
+		float engine_visibility = 1.0;
+		bool engine_shadow = false;
+#ifdef CHARACTER_ENGINE_SHADOWS
+		engine_shadow = mode != 0 && engine_local_shadows_enabled;
+		if (engine_shadow) {
+			engine_visibility = custom_forward_local_shadow(uvec2(local_shadow_id_low[i],local_shadow_id_high[i]),
+					local_shadow_is_spot[i],(VIEW_MATRIX*vec4(face_world,1.0)).xyz,
+					normalize(mat3(VIEW_MATRIX)*n)*(FRONT_FACING?1.0:-1.0));
+		}
+#endif
+		bool projected_shadow = shadow_atlas_enabled && local_shadow_enabled[i];
+		if (!engine_shadow && projected_shadow && mode != 0) {
+			shadow *= face_shadow_atlas(shadow_atlas, local_shadow_matrices[i], local_shadow_rects[i],
+					local_shadow_bias[i], face_world, n, local_positions[i].xyz);
+		}
 		if (mode == 0) {
 			result += face_local_zero(local_colors[i].rgb, attenuation, l, radial, light_normal, mask.g, p.x, p.y, surface_color);
 		} else if (mode == 1) {
-			shadow *= character_sat(dot(radial, l) + 1.0);
-			result += face_local_one(local_colors[i].rgb, attenuation, dot(light_normal, l), p, shadow, mask.g, sdf.a, graded, diffuse_base);
+			if (!engine_shadow && !projected_shadow) {
+				shadow *= character_sat(dot(radial, l) + 1.0);
+			}
+			result += engine_visibility * face_local_one(local_colors[i].rgb, attenuation, dot(light_normal, l), p, shadow, mask.g, sdf.a, graded, diffuse_base);
 		} else if (mode == 3) {
-			result += face_local_three(local_colors[i].rgb, attenuation, l, view, camera_axis, light_normal, camera_z, mask.a, p.x, p.y, shadow, diffuse_base);
+			result += engine_visibility * face_local_three(local_colors[i].rgb, attenuation, l, view, camera_axis, light_normal, camera_z, mask.a, p.x, p.y, shadow, diffuse_base);
 		}
 	}
 	ALBEDO = base.rgb;

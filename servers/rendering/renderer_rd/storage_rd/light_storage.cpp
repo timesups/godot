@@ -742,6 +742,10 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 				}
 
 				DirectionalLightData &light_data = directional_lights[r_directional_light_count];
+				// Directional padding is uint on both CPU and GPU; preserve the full RID.
+				const uint64_t character_light_id = light_instance->light.get_id();
+				light_data.pad[0] = uint32_t(character_light_id);
+				light_data.pad[1] = uint32_t(character_light_id >> 32);
 
 				Transform3D light_transform = light_instance->transform;
 
@@ -998,6 +1002,12 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 		}
 
 		LightData &light_data = *light_data_ptr;
+		// Custom Forward resolves explicit character light slots by the complete base RID.
+		// Keep the shared GPU layout unchanged; ordinary renderers ignore these pad words.
+		const uint64_t character_light_id = light_instance->light.get_id();
+		const uint32_t character_light_words[2] = { uint32_t(character_light_id), uint32_t(character_light_id >> 32) };
+		static_assert(sizeof(light_data.pad) == sizeof(character_light_words));
+		memcpy(light_data.pad, character_light_words, sizeof(character_light_words));
 		Transform3D light_transform = light_instance->transform;
 
 		float sign = light->negative ? -1 : 1;

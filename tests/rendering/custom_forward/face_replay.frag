@@ -21,8 +21,11 @@ layout(set=0,binding=10) uniform sampler2D face_mask;
 layout(set=0,binding=11) uniform sampler2D face_sdf;
 layout(set=0,binding=12) uniform sampler2D face_specular;
 layout(set=0,binding=13) uniform sampler2D screen_mask;
+layout(set=0,binding=14) uniform sampler2D shadow_atlas;
+layout(set=0,binding=15,std430) readonly buffer Shadows { vec4 shadows[]; };
 // CHARACTER_LIGHTING_SHARED
 // FACE_LIGHTING_SHARED
+// FACE_SHADOW_SHARED
 void main() {
     ivec2 pixel=ivec2(gl_FragCoord.xy);
     vec3 N=normalize(normal);
@@ -48,7 +51,7 @@ void main() {
     vec3 origin=vec3(transform[0].w,transform[1].w,transform[2].w);
     vec3 radial=normalize(vec3(world.x-origin.x,0.0001,world.z-origin.z));
     vec3 surface_color,light_normal,diffuse_base;
-    vec3 result=face_lighting(base4,graded,mask4,sdf,ramp,specular_stamp,N,normalize(g[44].xyz-world),radial,cam_z,local_light,transpose(matrix),texelFetch(screen_mask,pixel,0).g,g[193].rgb*lights[3].w,g[191].rgb,g[195].xyz,g[196].xyz,0.28772246837615967,g[189].y,g[189].z,vec3(0.3813261,0.12477182,0.13843161),vec2(0.85,1.0),surface_color,light_normal,diffuse_base);
+    vec3 result=face_lighting(base4,graded,mask4,sdf,ramp,specular_stamp,N,normalize(g[44].xyz-world),radial,cam_z,local_light,transpose(matrix),texelFetch(screen_mask,pixel,0).g,g[193].rgb*lights[3].w,g[192].rgb,g[195].xyz,g[196].xyz,0.28772246837615967,g[189].y,g[189].z,vec3(0.3813261,0.12477182,0.13843161),vec2(0.85,1.0),surface_color,light_normal,diffuse_base);
     uint tile=(uint(pixel.y)/32u)*80u+uint(pixel.x)/32u;
     uint depth_bin=uint(clamp(floor(1.0/gl_FragCoord.w-0.1),0.0,2047.0));
     uint mask=bins[tile*8u]&bins[28800u+depth_bin*8u];
@@ -76,10 +79,15 @@ void main() {
             float shadow=character_sat(dot(radial,L)+1.0);
             result+=face_local_one(lc.rgb,attenuation,ndl,parms,shadow,mask4.g,sdf.a,graded,diffuse_base);
         } else if(mode==3u) {
-            result+=face_local_three(lc.rgb,attenuation,L,normalize(g[44].xyz-world),g[6].xyz,light_normal,cam_z,mask4.a,parms.x,parms.y,1.0,diffuse_base);
+            int shadow_index=int(lights[offset+3u].x);
+            int matrix_offset=64+4*shadow_index;
+            mat4 shadow_matrix=mat4(shadows[matrix_offset],shadows[matrix_offset+1],shadows[matrix_offset+2],shadows[matrix_offset+3]);
+            float shadow=face_shadow_atlas(shadow_atlas,shadow_matrix,shadows[344+shadow_index],shadows[288+shadow_index],world,N,pos.xyz);
+            result+=face_local_three(lc.rgb,attenuation,L,normalize(g[44].xyz-world),g[6].xyz,light_normal,cam_z,mask4.a,parms.x,parms.y,shadow,diffuse_base);
         }
     }
     hdr=vec4(result,1);
     raw_hdr=hdr;
     sampled_base=vec4(base,1);
+    // FACE_DIAGNOSTICS
 }

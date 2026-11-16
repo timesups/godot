@@ -233,6 +233,19 @@ ShaderTypes::ShaderTypes() {
 	shader_modes[RSE::SHADER_SPATIAL].functions["light"].can_discard = true;
 	shader_modes[RSE::SHADER_SPATIAL].functions["light"].main_function = true;
 
+	{
+		ShaderLanguage::StageFunctionInfo func;
+		func.skip_function = "vertex";
+		func.return_type = ShaderLanguage::TYPE_FLOAT;
+		func.arguments.push_back(ShaderLanguage::StageFunctionInfo::Argument("light_id", ShaderLanguage::TYPE_UVEC2));
+		func.arguments.push_back(ShaderLanguage::StageFunctionInfo::Argument("is_spot", ShaderLanguage::TYPE_BOOL));
+		func.arguments.push_back(ShaderLanguage::StageFunctionInfo::Argument("view_position", ShaderLanguage::TYPE_VEC3));
+		func.arguments.push_back(ShaderLanguage::StageFunctionInfo::Argument("view_normal", ShaderLanguage::TYPE_VEC3));
+		shader_modes[RSE::SHADER_SPATIAL].functions["fragment"].stage_functions["custom_forward_local_shadow"] = func;
+		func.arguments.remove_at(1);
+		shader_modes[RSE::SHADER_SPATIAL].functions["fragment"].stage_functions["custom_forward_directional_shadow"] = func;
+	}
+
 	// spatial render modes
 	{
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("blend"), "mix", "add", "sub", "mul", "premul_alpha" });
@@ -243,6 +256,7 @@ ShaderTypes::ShaderTypes() {
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("cull"), "back", "front", "disabled" });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("unshaded") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("custom_character") });
+		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("custom_character_shadows") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("wireframe") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("diffuse"), "lambert", "lambert_wrap", "burley", "toon" });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("specular"), "schlick_ggx", "toon", "disabled" });

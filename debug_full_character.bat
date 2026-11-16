@@ -11,5 +11,5 @@ if not exist "%GODOT_EXE%" (
 )
 "%~dp0.venv\Scripts\python.exe" "%~dp0tests\rendering\custom_forward\prepare_character.py" "%EVIDENCE%"
 if errorlevel 1 exit /b 1
-"%GODOT_EXE%" --path "%~dp0tests\rendering\custom_forward" --rendering-method custom_forward --rendering-driver vulkan --script res://full_character.gd -- --evidence="%EVIDENCE%" %KEEP_OPEN% %*
+"%GODOT_EXE%" --audio-driver Dummy --path "%~dp0tests\rendering\custom_forward" --rendering-method custom_forward --rendering-driver vulkan --script res://full_character.gd -- --evidence="%EVIDENCE%" %KEEP_OPEN% %*
 exit /b %ERRORLEVEL%

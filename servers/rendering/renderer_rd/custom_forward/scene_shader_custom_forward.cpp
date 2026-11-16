@@ -783,6 +783,9 @@ void SceneShaderCustomForward::init(const String p_defines) {
 		actions.renames["CUSTOM1"] = "custom1_attrib";
 		actions.renames["CUSTOM2"] = "custom2_attrib";
 		actions.renames["CUSTOM3"] = "custom3_attrib";
+		actions.renames["custom_forward_local_shadow"] = "custom_forward_local_shadow";
+		actions.renames["custom_forward_directional_shadow"] = "custom_forward_directional_shadow";
+		actions.render_mode_defines["custom_character_shadows"] = "#define CUSTOM_LOCAL_SHADOW_USED\n";
 		actions.renames["LIGHT_VERTEX"] = "light_vertex";
 
 		actions.renames["NODE_POSITION_WORLD"] = "read_model_matrix[3].xyz";
