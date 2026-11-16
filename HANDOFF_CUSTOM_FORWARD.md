@@ -1,17 +1,18 @@
 # 交接：Custom Forward 抓帧还原
 
-更新：2026-11-16。工作目录 `E:\ZcxCode\godot`，分支 `4.7_custom_render_pipeline`；前轮实现 `52872eadfb`、交接基线 `e6f1305834`，前置级联修复 `86da77307e`；近接触修复 `e53eb25730`；本轮斜面 PCSS 修复提交号以 git log 为准。
+更新：2026-11-16。工作目录 `E:\ZcxCode\godot`，分支 `4.7_custom_render_pipeline`；近接触修复 `e53eb25730`，斜面 PCSS 修复 `7b8ce796b2`；本轮主光阴影来源/过滤回放提交号以 git log 为准。
 本文件写入前已核对 git status/log/diff、构建日志及本地 GPU 验证报告。
 
 ## 新会话先读：当前状态摘要
 
-- **目标**：继续完善独立 Custom Forward 的角色实时阴影质量，保留原始 Forward+ 和全部已有回归。
-- **本轮解决**：60°/75° 无遮挡斜面 PCSS acne，可见度 .972686/.809968 恢复为 1/1。仅修改 Custom Forward 角色方向光的 PCSS 遮挡物搜索；保留真实 blocker 的深度统计和最终过滤。
-- **近接触修复保留**：`e53eb25730` 的四纹素接收面查询不变；2 mm/1 cm/5 cm 可见度仍为 0，球面/椭球受光区为 1、背光区为 0。PCF 与接触基线逐像素一致。
-- **验证**：329 组（保留原 249 组，新增 64 组斜面/近遮挡和 16 组远处斜角边缘）、160 组级联/36 组跨界、默认/live 完整角色、AO/阴影独立性及双管线 smoke 通过。原 193/249 基线比较通过；实际材质及最终 live 图已目检，独立复查通过。独立 HDR/后处理回放本轮未重跑。
-- **下一步**：按已确定顺序，追踪原抓帧中角色主光阴影输入的生成/合成路径，再还原原游戏 AO，最后核对剩余后处理。当前阴影仍是引擎接入与质量修正，不是原游戏算法还原。不要重复八个 draw 材质或素材提取工作。
-- **范围限制**：其他 atlas/相机尺度、动画、TAA/FSR2、多视图及性能尚未验证；接收面外推和保守 contact 都是近似，不能保证亚纹素薄遮挡物与任意曲面。
-- **工作区/构建**：本轮开始干净、基线 HEAD `e53eb25730`；已重新编译，日志 `build-pcss-coherent.log`。保留 `.renderdoc-analysis/shadow-bias/character`（193）和 `contact-coherent`（249）两个历史基线。最新提交见 git log。
+- **目标**：分阶段还原原抓帧角色主光阴影，保留实时质量修复、原始 Forward+ 和全部已有回归。
+- **本轮完成**：追踪 E269–334 角色 D16 atlas → E637/E641 模板分区 RG8 → 角色材质合成。独立 GPU 回放 E641 有效过滤：249573 个角色像素中 249572 个完全一致，仅 (1306,542) 差 1 个 RG8 编码值。详见 `servers/rendering/renderer_rd/custom_forward/CAPTURE_MAIN_SHADOW.md`。
+- **关键纠正**：捕获 `173767.G` 来自角色 shadow atlas，并非 SSAO；旧 helper 的 `ao` 命名不能代表来源。R 来自全局方向阴影，本帧被常量旁路为 1。G 为固定半径 16 gather/64 比较及覆盖率/深度差重映射，不是 Godot PCSS。现有材质/live SSAO 行为未改。
+- **近接触/PCSS 修复保留**：`e53eb25730`、`7b8ce796b2` 的代码和全部测试不变。
+- **验证**：新鲜原生重导出 hash 一致，新过滤 GPU 回放/比较通过；九项材质 GPU 回放、后处理、默认/live 完整角色、AO/阴影独立性和双管线 smoke 重跑通过。329、160/36、历史193/249 组在保留捕获上重跑比较通过；本轮未重新采集这些阴影矩阵，未重编引擎。日志 `.renderdoc-analysis/main-shadow/regression-*`。
+- **下一步**：独立重建角色 atlas，再串接现有材质回放，最后设计可选 live 接入。E321 是额外的 54378 索引抖动裁剪 caster；E301 有 alpha 阈值裁剪，不能只重画八个部件。全局非旁路分支需其他抓帧；之后追踪真正 AO 和剩余后处理。
+- **范围限制**：本轮使用捕获 atlas/G-buffer/stencil，尚未重建其生成；非旁路全局阴影、动画、其他 atlas、TAA/FSR2、多视图及性能未验证。
+- **工作区/构建**：本轮开始干净、基线 HEAD `7b8ce796b2`，运行时代码未改。保留 `.renderdoc-analysis/shadow-bias/character`（193）和 `contact-coherent`（249）两个历史基线。最新提交见 git log。
 - **授权**：按 AGENTS.md 自动本地提交，不 push。
 
 ### 为什么保留原始 Forward+
@@ -20,7 +21,7 @@
 
 ### 可直接粘贴到新会话
 
-> 请先阅读 E:\ZcxCode\godot\HANDOFF_CUSTOM_FORWARD.md 和 AGENTS.md，核对工作区，简述目标与下一步。2 mm 接触漏光及斜面 PCSS acne 已通过 329 组验证；请接着追踪原抓帧中角色主光阴影输入的生成/合成路径，先确认具体 pass 和资源关系，再分阶段还原。保留近接触/PCSS 修复、原始 Forward+、已有回归及所有未提交修改；主光阴影、脸部 SDF 与 screen AO 分开。完成里程碑后更新同一交接文档并本地提交，不要 push。
+> 请先阅读 E:\ZcxCode\godot\HANDOFF_CUSTOM_FORWARD.md 和 AGENTS.md，核对工作区，简述目标与下一步。主光阴影来源及 E641 角色过滤已独立回放验证，详见 CAPTURE_MAIN_SHADOW.md。请继续重建 E269–334 的角色 atlas，先确认额外 caster E321、附件 E301 裁剪及深度 bias，再比较 atlas 与屏幕输出。保留近接触/PCSS 修复、原始 Forward+、全部回归及未提交修改；区分全局阴影、角色阴影、真正 AO 与脸部 SDF。里程碑验证通过后更新同一交接文档并本地提交，不要 push。
 
 ## 目标与约束
 
@@ -171,16 +172,26 @@
 - 最新证据 `.renderdoc-analysis/pcss-final/validation.json`、`pcss-final-reference/`、`pcss-coherent-quality/validation.json`。日志 `build-pcss-coherent.log`、`pcss-final{-reference,-compare}.log`、`pcss-coherent-quality{-compare}.log`、`pcss-{legacy,contact}-baseline-compare.log`、`pcss-verified-{default,live,smoke-custom_forward,smoke-forward_plus}.log`、`pcss-real.log`；隔离图 `pcss-real-b*.png`。命令见 `CHARACTER_SHADOW_BIAS.md` 新 PCSS 章节。
 - 性能未测：每个可疑搜索样本最多增加四次点采样。其他 atlas、动画/变形、TAA/FSR2、多视图尚未验证；接收面近似不代表任意曲面遮挡或原游戏软阴影的逐像素还原。独立 HDR/后处理本轮未重跑。
 
-## 下一步（尚未开始）
+## 最新完成：原抓帧主光阴影来源与 E641 回放
 
-1. 按用户确认的顺序，反查原抓帧角色主光阴影输入的生成与合成：先确认相关 pass、资源和过滤算法，再实现独立回放对照，避免把当前引擎阴影称为原算法还原。
-2. 接着还原原游戏 AO（现有 screen AO 是 Godot SSAO 接入），最后核对剩余后处理；Bloom/LUT 与八个 draw 已完成的部分不要重复。
-3. 动画/其他 atlas/TAA/FSR2/多视图/性能作为独立扩展；当前素材是静态 post-VS posed mesh，没有骨骼动画数据。保留本轮 329 组和全部历史门槛。
+- 具体 pass、资源、常量、sampler、模板状态和九个 atlas draw 对应见 `CAPTURE_MAIN_SHADOW.md`。原生导出脚本 `export_main_shadow.py` 可复现，素材不提交，未修改已安装 MCP bridge。
+- 新增 `main_shadow_replay.gd/.glsl`、`compare_main_shadow.py` 和固定输入 hash。独立 GPU 实现过滤，不执行原 SPIR-V；不把原 atlas 生成称为已还原。
+- 249573 个角色像素中 249572 个 RG8 完全一致，唯一差异 G=255 对 254；归一化 G MAE 1.571311250596411e-8。全局 R 和所有非角色像素完全一致。覆盖 8196 全黑、20164 半影、221213 全白。只允许已记录单点 1 编码差，不设置宽泛的全图误差容差。
+- 新鲜原生重导出全部固定 hash 一致；对比图已目检。证据 `.renderdoc-analysis/main-shadow/reexport/{pipeline-evidence.json,main-shadow-validation.json,gpu.log}`。旧材质回放仍用原捕获输入，尚未串接新屏幕输出。
+- 九项材质与后处理 GPU/比较、默认/live 完整角色、AO/阴影独立性及双管线 smoke 重跑通过；日志 `main-shadow/regression-*`。329、160/36、历史193/249 用保留捕获重跑比较通过，测试与门槛均未改。
+- 独立复查无可操作发现；复查单独重跑新比较器和暂存 diff 空白检查通过。atlas 生成、材质串接与 live 接入明确留在下一阶段。
+
+## 下一步（分阶段继续）
+
+1. 重建 E269–334 atlas：提取 shadow post-VS/变换、确认 E321 额外几何，恢复 E301 阈值/E321 抖动裁剪和 D16 -8 bias。先比较 atlas 深度，再输入已验证 E641 回放。
+2. 串接新屏幕结果与八个材质回放，设计可选 live 接入，保留 engine contact/PCSS 路径。全局级联/cloud 有效分支需要其他抓帧，当前帧不能证明它们正确。
+3. 追踪真正 AO，最后核对剩余后处理；捕获 G 不是 SSAO，旧材质变量名不能作为依据。Bloom/LUT 与八个 draw 已完成部分不要重复。
+4. 动画/其他 atlas/TAA/FSR2/多视图/性能作为独立扩展；当前素材仍是静态 post-VS posed mesh。保留 329 组和全部历史门槛。
 
 ## 已验证基线
 
 最新构建：`.renderdoc-analysis/build-pcss-coherent.log`，成功，32.72 秒；重新生成 shader 并链接，修复仅涉及 Custom Forward 角色阴影 helper。运行环境 Windows / Vulkan / RTX 3050。
-最新 live 日志：`.renderdoc-analysis/pcss-verified-live.log`，含 `CHARACTER_SCREEN_AO_OK`、`FACE_CLOTHES_ENGINE_SHADOWS_OK`、`CHARACTER_LIVE_OK`、`FULL_CHARACTER_OK`，无 shader/runtime 错误。
+最新 live 日志：`.renderdoc-analysis/main-shadow/regression-live.log`，含 `CHARACTER_SCREEN_AO_OK`、`FACE_CLOTHES_ENGINE_SHADOWS_OK`、`CHARACTER_LIVE_OK`、`FULL_CHARACTER_OK`，无 shader/runtime 错误。
 
 | 检查 | 最新结果 |
 | --- | --- |
@@ -199,8 +210,8 @@
 | 原始 Forward+ / Custom Forward | baseline smoke 均通过 |
 | 默认完整角色 / live 完整角色 | 均通过 |
 
-最新比较日志：`.renderdoc-analysis/shadow-quality-{ear_replay,accessory_replay,iris_replay,skin_replay,material_replay,face_replay,clothes_surface_replay,clothes_replay,hair_replay}-regression.log` 及 `shadow-quality-post-regression.log`。
-上述独立 HDR 比较为前轮基线，本轮未重跑；其源码与门槛不变。两管线 baseline smoke：`shadow-quality-smoke-{custom_forward,forward_plus}.log`；默认完整角色：`shadow-quality-full-character.log`；live 完整角色：`live-shadow-quality-test.log`；基础色诊断维持前轮 `ear-albedo-character.log`。成功 marker 和无 ERROR 已核对。
+最新材质/后处理日志：`.renderdoc-analysis/main-shadow/regression-{ear_replay,accessory_replay,iris_replay,skin_replay,material_replay,face_replay,clothes_surface_replay,clothes_replay,hair_replay,post}-{gpu,compare}.log`。
+上述独立 HDR/后处理本轮已重跑 GPU 与比较，源码与门槛不变。两管线 baseline smoke：`main-shadow/regression-smoke-{custom_forward,forward_plus}.log`；默认完整角色：`main-shadow/regression-default.log`；live：`main-shadow/regression-live.log`。成功 marker 和无 ERROR 已核对。阴影矩阵本轮仅重跑保留捕获的比较；基础色诊断维持前轮 `ear-albedo-character.log`。
 方向光证据另见 `hair-live-validation.json`、`hair-shadow-directional-{visible,blocked}.png`。
 前轮日志：`shadow-bias-{character,forward_plus,compare,quality,quality-compare,default,live,smoke-custom_forward,smoke-forward_plus}.log`。静态角色自阴影已覆盖上述场景；动画、多视图和大 cluster 性能未验证。
 
@@ -253,6 +264,8 @@ $evidence = 'E:/ZcxCode/godot/.renderdoc-analysis/endfield-frame37917/gbuffer-ma
 
 以下路径相对仓库根目录，按需阅读，避免一次加载全部抓帧日志：
 
+- `servers/rendering/renderer_rd/custom_forward/CAPTURE_MAIN_SHADOW.md`（本轮新入口）
+- `tests/rendering/custom_forward/{export_main_shadow.py,main_shadow_replay.gd,main_shadow_replay.glsl,compare_main_shadow.py,main_shadow_inputs.json}`
 - `servers/rendering/renderer_rd/custom_forward/README.md`
 - 同目录 `CHARACTER_SHADOW_BIAS.md`、`ENGINE_CHARACTER_SHADOWS.md`、`DIRECTIONAL_SHADOW_QUALITY.md`、`LIVE_CHARACTER.md`、`CAPTURE_E699_EARS.md`、`CAPTURE_E684_ACCESSORIES.md`、`CAPTURE_E679_IRIS.md`、`CAPTURE_E669_SKIN.md`、`CAPTURE_E704_HAIR.md`、`CAPTURE_E694_SURFACE.md`
 - 同目录 `materials/hair.gdshader`、`hair_lighting.gdshaderinc`、`character_light_binding.gd`、`face*.gdshader*`、`clothes*.gdshader*`
