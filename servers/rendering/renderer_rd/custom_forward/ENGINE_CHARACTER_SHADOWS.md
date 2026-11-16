@@ -187,3 +187,14 @@ lobes or face SDF. Existing shaders and regression cases are preserved.
 Independent captured HDR validation is exact for all 2522 visible pixels;
 see [capture evidence and commands](CAPTURE_E699_EARS.md). This statement is
 limited to the captured visible subset and active dry material branch.
+
+## Directional cascade edge and PCSS regression
+
+Character shadows now skip unused cascade matrices when only one or two
+cascades exist. This fixes fully occluded areas becoming lit with two-split
+PCSS blending, and invalid PCF blending near the last split. Original Forward+
+is unchanged, including its reproducible version of this defect.
+
+The new independent partial-coverage fixture validates 160 cases per renderer,
+36 camera crossings, penumbra growth, filter noise, distance fade and opacity.
+See [quality evidence and reproduction](DIRECTIONAL_SHADOW_QUALITY.md).

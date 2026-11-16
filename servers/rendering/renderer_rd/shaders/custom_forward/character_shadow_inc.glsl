@@ -255,6 +255,12 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 #ifndef SHADOWS_DISABLED
 	if (directional_lights.data[i].shadow_opacity > 0.001) {
 		float depth_z = -vertex.z;
+		// Unused splits repeat the last distance, but their matrices/atlas regions
+		// are not valid. Never blend into them (notably two-split PCSS).
+		vec4 splits = directional_lights.data[i].shadow_split_offsets;
+		if (depth_z >= splits.w) {
+			return 1.0;
+		}
 		vec3 light_dir = directional_lights.data[i].direction;
 		vec3 base_normal_bias = geo_normal * (1.0 - max(0.0, dot(light_dir, -geo_normal)));
 
@@ -285,7 +291,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				blend_count++;
 			}
 
-			if (blend_count < blend_max && depth_z < directional_lights.data[i].shadow_split_offsets.y) {
+			if (blend_count < blend_max && splits.y > splits.x && depth_z < splits.y) {
 				vec4 v = vec4(vertex, 1.0);
 
 				CUSTOM_DIRECTIONAL_BIAS(v, 1)
@@ -310,7 +316,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				blend_count++;
 			}
 
-			if (blend_count < blend_max && depth_z < directional_lights.data[i].shadow_split_offsets.z) {
+			if (blend_count < blend_max && splits.z > splits.y && depth_z < splits.z) {
 				vec4 v = vec4(vertex, 1.0);
 
 				CUSTOM_DIRECTIONAL_BIAS(v, 2)
@@ -335,7 +341,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				blend_count++;
 			}
 
-			if (blend_count < blend_max) {
+			if (blend_count < blend_max && splits.w > splits.z) {
 				vec4 v = vec4(vertex, 1.0);
 
 				CUSTOM_DIRECTIONAL_BIAS(v, 3)
@@ -411,14 +417,14 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 					pssm_blend = smoothstep(directional_lights.data[i].shadow_split_offsets.x - directional_lights.data[i].shadow_split_offsets.x * 0.1, directional_lights.data[i].shadow_split_offsets.x, depth_z);
 					// Adjust shadow blur with reference to the first split to reduce discrepancy between shadow splits.
 					blur_factor2 = directional_lights.data[i].shadow_split_offsets.x / directional_lights.data[i].shadow_split_offsets.y;
-				} else if (depth_z < directional_lights.data[i].shadow_split_offsets.y) {
+				} else if (splits.z > splits.y && depth_z < splits.y) {
 					vec4 v = vec4(vertex, 1.0);
 					CUSTOM_DIRECTIONAL_BIAS(v, 2)
 					pssm_coord = (directional_lights.data[i].shadow_matrix3 * v);
 					pssm_blend = smoothstep(directional_lights.data[i].shadow_split_offsets.y - directional_lights.data[i].shadow_split_offsets.y * 0.1, directional_lights.data[i].shadow_split_offsets.y, depth_z);
 					// Adjust shadow blur with reference to the first split to reduce discrepancy between shadow splits.
 					blur_factor2 = directional_lights.data[i].shadow_split_offsets.x / directional_lights.data[i].shadow_split_offsets.z;
-				} else if (depth_z < directional_lights.data[i].shadow_split_offsets.z) {
+				} else if (splits.w > splits.z && depth_z < splits.z) {
 					vec4 v = vec4(vertex, 1.0);
 					CUSTOM_DIRECTIONAL_BIAS(v, 3)
 					pssm_coord = (directional_lights.data[i].shadow_matrix4 * v);
