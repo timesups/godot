@@ -1,5 +1,10 @@
 # Live character engine shadows
 
+Project separation: material names and LIVE_CHARACTER.md below refer to the external
+Endfield repository (materials/ and docs/). Full regression commands live in its README.
+Set ENDFIELD_PROJECT to that project root before using the compatibility launcher.
+Engine interfaces and shadow implementation are unchanged.
+
 The optional `--live-lights` E689/E694/E704 paths consume the engine's actual Omni/Spot
 shadow atlas and directional cascades. Captured-constant materials/replays are
 unchanged. Face and clothes opt in with `CHARACTER_ENGINE_SHADOWS`; hair uses

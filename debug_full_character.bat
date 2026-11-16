@@ -1,15 +1,12 @@
 @echo off
 setlocal
-cd /d "%~dp0"
-set "GODOT_EXE=%~dp0bin\godot.windows.editor.x86_64.console.exe"
-set "EVIDENCE=%~dp0.renderdoc-analysis\endfield-frame37917\gbuffer-materials"
-set "KEEP_OPEN=--keep-open"
-if "%~1"=="--smoke" set "KEEP_OPEN="
-if not exist "%GODOT_EXE%" (
-    echo Build the Windows editor first.
+if not defined ENDFIELD_PROJECT (
+    echo Set ENDFIELD_PROJECT to the standalone Endfield project directory.
     exit /b 1
 )
-"%~dp0.venv\Scripts\python.exe" "%~dp0tests\rendering\custom_forward\prepare_character.py" "%EVIDENCE%"
-if errorlevel 1 exit /b 1
-"%GODOT_EXE%" --audio-driver Dummy --path "%~dp0tests\rendering\custom_forward" --rendering-method custom_forward --rendering-driver vulkan --script res://full_character.gd -- --evidence="%EVIDENCE%" %KEEP_OPEN% %*
+if not exist "%ENDFIELD_PROJECT%\debug_full_character.bat" (
+    echo Endfield launcher was not found in ENDFIELD_PROJECT.
+    exit /b 1
+)
+call "%ENDFIELD_PROJECT%\debug_full_character.bat" %*
 exit /b %ERRORLEVEL%
