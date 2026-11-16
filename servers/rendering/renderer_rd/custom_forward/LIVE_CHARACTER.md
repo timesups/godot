@@ -137,3 +137,17 @@ AO combines by minimum in the existing input; skin has no face SDF.
 See [CAPTURE_E669_SKIN.md](CAPTURE_E669_SKIN.md) for resources, independent HDR
 comparison (1866/1872 exact, all within one encoded step), live coverage and limits.
 The previous material and post-process regression cases remain intact.
+
+## E679 iris
+
+The full character now uses the captured iris material: tangent-view UV parallax,
+procedural diffuse/MatCap normals, iris tints, ramp and MatCap lighting. Independent
+captured replay matches all 513 visible HDR pixels exactly. See
+[CAPTURE_E679_IRIS.md](CAPTURE_E679_IRIS.md) for evidence, controls and scope.
+
+The live variant uses the existing 16-light bridge and directional/Omni/Spot engine
+shadows. Mode 1 gates the complete local contribution once; modes 0/4 retain their
+behavior and captured mode 3 stays zero. Unlike the four AO-enabled materials,
+this captured iris specialization ignores screen AO and has no face SDF.
+Default/live fixtures verify parallax, curvature, MatCap and AO independence;
+existing shadow tests now also cover iris without removing previous cases.

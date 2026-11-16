@@ -10,7 +10,7 @@ func live_material(source: ShaderMaterial) -> ShaderMaterial:
 func bind_scene(instances: Array, shared: Node) -> void:
 	for instance in instances:
 		var event := int(instance.get_meta("capture_event"))
-		if event not in [669,689,694]:
+		if event not in [669,679,689,694]:
 			continue
 		instance.material_override = live_material(instance.material_override)
 		var bridge = shared.get_script().new()
@@ -37,7 +37,7 @@ func run_materials(tree: SceneTree, instances: Array, camera: Camera3D, evidence
 	var report := {}
 	for instance in instances:
 		var event := int(instance.get_meta("capture_event"))
-		if event not in [669,689,694]:
+		if event not in [669,679,689,694]:
 			continue
 		var patch := MeshInstance3D.new()
 		patch.mesh = QuadMesh.new()
@@ -146,6 +146,11 @@ func run_materials(tree: SceneTree, instances: Array, camera: Camera3D, evidence
 				var occluded := await capture(tree)
 				var v := energy(visible)
 				var o := energy(occluded)
+				if event==679 and mode==3:
+					if not check(v==0 and o==0,"E679 captured mode 3 must remain zero"):
+						return false
+					local_report[kind+str(mode)] = {"visible":v,"blocked":o}
+					continue
 				if not check(v>1 and (visible.get_data()==occluded.get_data() if mode in [0,4] else o<v*0.01),"E%d %s mode %d shadow failed %f/%f" % [event,kind,mode,o,v]):
 					return false
 				local_report[kind+str(mode)] = {"visible":v,"blocked":o}

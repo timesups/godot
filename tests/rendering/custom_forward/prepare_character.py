@@ -14,7 +14,7 @@ import numpy as np
 PARTS = [
     (669, 468, "skin", 185721, "skin_normal_mapped", [185726]),
     (674, 457, "face_details", 185716, "validated_e674", []),
-    (679, 462, "iris", 186177, "iris", []),
+    (679, 462, "iris", 186177, "iris", [187349]),
     (684, 473, "accessories", 187399, "accessory_normal_mapped", [187429]),
     (689, 478, "face", 185716, "e689_sdf_face", []),
     (694, 483, "clothes", 187399, "clothes_normal_mapped", [187429]),
@@ -61,7 +61,7 @@ def prepare(root):
         parts.append({"event": event, "gbuffer_event": gbuffer, "name": name,
                       "variant": variant, "pixel_shader": pixel_shader, "base_texture": texture,
                       "auxiliary_textures": auxiliary,
-                      "material_status": "reconstructed_e669_measured" if event == 669 else "validated_lighting" if event == 674 else ("reconstructed_e689_measured" if event == 689 else ("reconstructed_e694_measured" if event == 694 else ("reconstructed_e704_measured" if event == 704 else "base_color_diagnostic_only"))),
+                      "material_status": "reconstructed_e679_measured" if event == 679 else "reconstructed_e669_measured" if event == 669 else "validated_lighting" if event == 674 else ("reconstructed_e689_measured" if event == 689 else ("reconstructed_e694_measured" if event == 694 else ("reconstructed_e704_measured" if event == 704 else "base_color_diagnostic_only"))),
                       "vertex_count": len(vertices), "index_count": len(indices),
                       "vertex_stride": m["vertexByteStride"], "vertex_offset": m["vertexByteOffset"],
                       "index_stride": m["indexByteStride"], "index_offset": m["indexByteOffset"],
@@ -73,6 +73,10 @@ def prepare(root):
         for mip in range(11):
             suffix = f"-mip{mip}" if mip else ""
             retain(f"e669-texture-{tid}{suffix}.dds")
+    for tid, levels in [(186177,10),(187349,9)]:
+        for mip in range(levels):
+            suffix = f"-mip{mip}" if mip else ""
+            retain(f"e679-texture-{tid}{suffix}.dds")
     retain("e674-record0-transform.bin")
     retain("e689-record0-transform.bin")
     for tid, levels in [(37722, 9), (4874, 1), (37745, 10), (53468, 1)]:

@@ -1,6 +1,6 @@
 # 交接：Custom Forward 抓帧还原
 
-更新：2026-11-16。工作目录 `E:\ZcxCode\godot`，分支 `4.7`，HEAD `9b458e9092`。
+更新：2026-11-16。工作目录 `E:\ZcxCode\godot`，分支 `4.7_custom_render_pipeline`；引擎验证基线 `9b458e9092`，前置皮肤/AO 提交 `90d1af44ae`（当前 HEAD 以 git log 为准）。
 本文件写入前已核对 git status/log/diff、构建日志及本地 GPU 验证报告。
 
 ## 目标与约束
@@ -9,16 +9,16 @@
 用户要求保留原始 Forward+、保留已有回归，允许从本机抓帧提取测试模型/纹理。
 按阶段实现、编译、GPU 验证，不把近似结果称为逐像素一致。
 
-- **保留工作区全部未提交修改和未跟踪源码，不要 reset/clean。** 本轮开始时已有实时 AO 未提交修改；本轮 E669 与之前 AO 修改均保留、尚未提交。
+- **保留工作区全部未提交修改和未跟踪源码，不要 reset/clean。** 先前 E669 与实时 AO 修改完整保留，并按新授权形成独立本地提交 `90d1af44ae`；E679 作为后续独立提交，不自动 push。
 - 优先继续使用此工作目录。仅 checkout HEAD 或创建新 worktree 不会带上未提交/未跟踪文件，也不会带上忽略的抓帧素材。
-- 本轮已完成 E669 皮肤还原及实时灯光/阴影/AO 接入；此前 E689/E694/E704 实时 AO 保留并重验；没有待运行的后台构建或需要继续等待的任务。
-- 不主动提交修改。没有必要重新安装 RenderDoc MCP 或重新提取全部资源。
+- 本轮已完成 E679 虹膜及实时灯光/引擎阴影接入；既有皮肤/脸/衣服/头发及实时 AO 保留并重验；没有待运行的后台构建或需要继续等待的任务。
+- 按 AGENTS.md 在完成验证的节点自动本地提交，无需再次确认；不自动 push。没有必要重新安装 RenderDoc MCP 或重新提取全部资源。
 
 ## 已完成
 
 1. 独立 Custom Forward、Bloom/LUT、E674 角色路径。
 2. E689 脸部 SDF 材质与捕获阴影图；E694 衣服法线/高光/环境反射/自发光；E704 头发双法线、双层各向异性高光、条纹。
-3. 完整静态角色 fixture：8 个 draw、52,489 顶点、61,618 三角形。E669/E674/E689/E694/E704 使用还原材质；虹膜、附件、耳朵仍是基础颜色诊断。
+3. 完整静态角色 fixture：8 个 draw、52,489 顶点、61,618 三角形。E669/E674/E679/E689/E694/E704 使用还原材质；附件、耳朵仍是基础颜色诊断。
 4. 可选 `--live-lights`：E704 实时深度轮廓光，方向光/点光/聚光灯场景绑定。测试覆盖相机投影、MSAA、缩放、灯光移动/隐藏/颜色/范围/删除/16 灯上限。
 5. E704 的引擎 Omni/Spot 阴影。模式 1/3 读取真实阴影，模式 0 保持不受阴影影响，模式 4 保持原有替换行为。新引擎已编译成功。
 
@@ -79,19 +79,30 @@
 - BC5 DDS 使用 128 字节 legacy header，BC7 使用 148 字节 DX10 header，不能统一跳过 148 字节。
 - 证据：`e669-gpu-validation.json`、`e669-debug-validation.json`；日志 `skin-replay-regression.log` / `live-skin-test.log`。E664/E668 不是有效参考 draw；旧探索导出不要当基准。
 
+## 最新完成：E679 虹膜
+
+- 新增 `iris.gdshader` / `iris_lighting.gdshaderinc`：视角相关 UV 偏移、程序球面双法线、虹膜/外围颜色、ramp 和 MatCap 高光。保留原有 posed mesh、切线手性、头部 object basis。
+- 有效路径使用白色主光槽 g194（不是皮肤 g193）、无 LUT 的亮度/饱和度 alternate。Base 与 MatCap 均需各向异性 repeat；MatCap 改 clamp 会造成边缘采样差异。
+- 新增独立 `iris_replay` / `compare_iris_replay.py`：E674→E679 导出 hash 固定，513/513 可见像素 HDR 编码完全一致，MAE/max=0，无漏像素；独立 Shader Debug (1255,1152)、primitive 54 的 RGB/法线也有断言。仅代表捕获可见子集，不代表完整可见性系统或所有变体。
+- 完整角色默认使用虹膜材质；UV 偏移、曲率、MatCap 参数响应通过。live 接入 16 灯桥接和方向光/Omni/Spot 引擎阴影；主光 visible/blocked RGB 和 22322.726/0，Omni/Spot 模式 1 为 34453.314/0、34003.891/0。
+- E679 **不使用 screen AO / 脸部 SDF**，保留原分支行为并测试 AO 输入不影响结果；模式 3 原始最终贡献为 0，模式 0/4 维持不受阴影影响/替换行为，模式 1 完整贡献只乘一次引擎可见度。不要为了统一材质而添加 AO 或 mode-3 高光。
+- 既有 live 测试原样保留，额外覆盖虹膜阴影、同位置灯 RID、16 灯上限与删除清理。默认/live 完整角色与全部旧回归通过，live 三分之四视图已目检。
+- 详细资源、限制、命令见 `CAPTURE_E679_IRIS.md`；证据 `e679-gpu-validation.json`、`e679-debug-validation.json`，日志 `iris-iris_replay-regression.log` / `live-iris-test.log`。
+
 ## 下一步（尚未开始）
 
-1. 其余三种基础颜色诊断材质待接入（E679 虹膜、E684 附件、E699 耳朵）。优先提取 E679 的绑定与有效 shader 分支，建立独立回放基线，再接入实时灯光。
+1. 剩余 E684 附件、E699 耳朵为基础色诊断。优先核对 E684 与 E694 衣服的有效 shader/材质参数差异，复用已有资源，建立独立回放基线后接入完整角色。
 2. 如提高阴影质量，增加局部遮挡边缘的级联过渡、软阴影定量测试；当前测试以完全覆盖为主，未承诺半影逐像素精度。
 3. 动态角色脸部 SDF 与几何自阴影的艺术效果仍可进一步调校；当前使用静态 posed mesh，没有骨骼动画还原。保留全部现有回归。
 
 ## 已验证基线
 
-最新构建：`build-custom-skin.log`，成功（up to date），17.79 秒；皮肤接入无需新增引擎 C++ 修改。运行环境 Windows / Vulkan / RTX 3050。
-最新 live 日志：`.renderdoc-analysis/live-skin-test.log`，含 `CHARACTER_SCREEN_AO_OK`、`FACE_CLOTHES_ENGINE_SHADOWS_OK`、`CHARACTER_LIVE_OK`、`FULL_CHARACTER_OK`，无 shader/runtime 错误。
+最新构建：`build-custom-iris.log`，成功，25.79 秒；提交后刷新版本信息并重新链接，虹膜接入无需新增引擎 C++ 修改。运行环境 Windows / Vulkan / RTX 3050。
+最新 live 日志：`.renderdoc-analysis/live-iris-test.log`，含 `CHARACTER_SCREEN_AO_OK`、`FACE_CLOTHES_ENGINE_SHADOWS_OK`、`CHARACTER_LIVE_OK`、`FULL_CHARACTER_OK`，无 shader/runtime 错误。
 
 | 检查 | 最新结果 |
 | --- | --- |
+| E679 HDR | 513/513 编码完全一致，MAE/max=0；独立 debug RGB/法线通过 |
 | E669 HDR | 1866/1872 完全一致，MAE 1.0085581375e-5，所有误差 <=1 编码步长 |
 | E689 HDR | 5266/5390 完全一致，MAE 8.889919604e-5，最大 0.015625 |
 | E694 HDR | 215051/215604 完全一致，MAE 2.05975676e-6，12 像素超过一个编码步长，最大 19 步 |
@@ -102,8 +113,8 @@
 | 原始 Forward+ / Custom Forward | baseline smoke 均通过 |
 | 默认完整角色 / live 完整角色 | 均通过 |
 
-最新比较日志：`.renderdoc-analysis/skin-{material_replay,face_replay,clothes_surface_replay,clothes_replay,hair_replay}-regression.log` 及 `skin-post-regression.log`。
-本轮全部重跑，误差维持上表基线。两管线 baseline smoke：`skin-smoke-{custom_forward,forward_plus}.log`；默认完整角色：`skin-full-character.log`；live 完整角色：`live-skin-test.log`。成功 marker 和无 ERROR 已核对。
+最新比较日志：`.renderdoc-analysis/iris-{iris_replay,skin_replay,material_replay,face_replay,clothes_surface_replay,clothes_replay,hair_replay}-regression.log` 及 `iris-post-regression.log`。
+本轮全部重跑，误差维持上表基线。两管线 baseline smoke：`iris-smoke-{custom_forward,forward_plus}.log`；默认完整角色：`iris-full-character.log`；live 完整角色：`live-iris-test.log`。成功 marker 和无 ERROR 已核对。
 方向光证据另见 `hair-live-validation.json`、`hair-shadow-directional-{visible,blocked}.png`。
 最近独立审查未发现引擎局部阴影的 blocking/should-fix 问题。软阴影质量、多视图和大 cluster 性能未验证。
 
@@ -127,7 +138,7 @@ $evidence = 'E:/ZcxCode/godot/.renderdoc-analysis/endfield-frame37917/gbuffer-ma
 .\.venv\Scripts\python.exe tests/rendering/custom_forward/compare_hair_replay.py $evidence
 ```
 
-依次替换为 skin_replay、material_replay、face_replay、clothes_replay、clothes_surface_replay；最后一个 Python 名称是 `compare_clothes_surface.py`。
+依次替换为 iris_replay、skin_replay、material_replay、face_replay、clothes_replay、clothes_surface_replay；最后一个 Python 名称是 `compare_clothes_surface.py`。
 `post_process.gd` / `compare_post.py` 使用父目录 `.renderdoc-analysis/endfield-frame37917`。
 `smoke.gd` 分别用 `--rendering-method custom_forward` 和 `forward_plus`。
 检查成功 marker 和日志无 ERROR，不只看退出码：一些旧 GDScript helper 的 assert 可能没有使整个进程返回非零。
@@ -150,14 +161,14 @@ $evidence = 'E:/ZcxCode/godot/.renderdoc-analysis/endfield-frame37917/gbuffer-ma
 - E704 保留头部 object basis 和 tangent handedness；第二组法线不随背面翻转。
 - Shader Debug 必须指定最终可见 primitive；E704 (1220,1190) 是 4519。默认首个重叠三角形可能被遮挡。
 - captured HDR 回放的 mask/depth rejection 只是隔离可见像素，不代表完整 visibility 管线已还原。
-- 无 TAA/FSR2/multiview 阴影精度或性能承诺。其他三种材质仍未完成。
+- 无 TAA/FSR2/multiview 阴影精度或性能承诺。附件与耳朵两种材质仍未完成。
 
 ## 入口文件
 
 以下路径相对仓库根目录，按需阅读，避免一次加载全部抓帧日志：
 
 - `servers/rendering/renderer_rd/custom_forward/README.md`
-- 同目录 `ENGINE_CHARACTER_SHADOWS.md`、`LIVE_CHARACTER.md`、`CAPTURE_E669_SKIN.md`、`CAPTURE_E704_HAIR.md`、`CAPTURE_E694_SURFACE.md`
+- 同目录 `ENGINE_CHARACTER_SHADOWS.md`、`LIVE_CHARACTER.md`、`CAPTURE_E679_IRIS.md`、`CAPTURE_E669_SKIN.md`、`CAPTURE_E704_HAIR.md`、`CAPTURE_E694_SURFACE.md`
 - 同目录 `materials/hair.gdshader`、`hair_lighting.gdshaderinc`、`character_light_binding.gd`、`face*.gdshader*`、`clothes*.gdshader*`
 - `servers/rendering/renderer_rd/shaders/custom_forward/character_shadow_inc.glsl`、`scene_custom_forward.glsl`
 - `servers/rendering/renderer_rd/custom_forward/scene_shader_custom_forward.cpp`
