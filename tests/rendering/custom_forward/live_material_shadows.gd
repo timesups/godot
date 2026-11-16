@@ -10,7 +10,7 @@ func live_material(source: ShaderMaterial) -> ShaderMaterial:
 func bind_scene(instances: Array, shared: Node) -> void:
 	for instance in instances:
 		var event := int(instance.get_meta("capture_event"))
-		if event not in [669,679,684,689,694]:
+		if event not in [669,679,684,689,694,699]:
 			continue
 		instance.material_override = live_material(instance.material_override)
 		var bridge = shared.get_script().new()
@@ -37,7 +37,7 @@ func run_materials(tree: SceneTree, instances: Array, camera: Camera3D, evidence
 	var report := {}
 	for instance in instances:
 		var event := int(instance.get_meta("capture_event"))
-		if event not in [669,679,684,689,694]:
+		if event not in [669,679,684,689,694,699]:
 			continue
 		var patch := MeshInstance3D.new()
 		patch.mesh = QuadMesh.new()

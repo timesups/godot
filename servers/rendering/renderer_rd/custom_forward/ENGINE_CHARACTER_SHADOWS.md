@@ -175,3 +175,15 @@ remains environment lighting, and the active captured specialization has no emis
 AO stays separate in screen-shadow y and combines by minimum with manual AO.
 `live_material_shadows.gd` and `live_character_ao.gd` include the accessory material;
 see `CAPTURE_E684_ACCESSORIES.md` and the handoff for measured results.
+
+## E699 ears
+
+The full character now uses `ear.gdshader`, restoring all eight captured draws.
+E699 uses geometric normals, its own alternate color and analytic lookup,
+with reflection and the existing 16-light bridge, directional/Omni/Spot
+shadows and independently combined screen AO. It has no hair anisotropic
+lobes or face SDF. Existing shaders and regression cases are preserved.
+
+Independent captured HDR validation is exact for all 2522 visible pixels;
+see [capture evidence and commands](CAPTURE_E699_EARS.md). This statement is
+limited to the captured visible subset and active dry material branch.

@@ -35,7 +35,7 @@ func run_ao(tree: SceneTree, instances: Array, camera: Camera3D, environment: En
 	var report := {}
 	for instance in instances:
 		var event := int(instance.get_meta("capture_event"))
-		if event not in [669,684,689,694,704]:
+		if event not in [669,684,689,694,699,704]:
 			continue
 		var patch := MeshInstance3D.new()
 		patch.mesh = QuadMesh.new()

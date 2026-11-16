@@ -1,6 +1,6 @@
 # 交接：Custom Forward 抓帧还原
 
-更新：2026-11-16。工作目录 `E:\ZcxCode\godot`，分支 `4.7_custom_render_pipeline`；引擎验证基线 `9b458e9092`，前置虹膜提交 `e4d1b1d96b`（当前 HEAD 以 git log 为准）。
+更新：2026-11-16。工作目录 `E:\ZcxCode\godot`，分支 `4.7_custom_render_pipeline`；引擎验证基线 `9b458e9092`，前置附件提交 `4954a9d6c4`（当前 HEAD 以 git log 为准）。
 本文件写入前已核对 git status/log/diff、构建日志及本地 GPU 验证报告。
 
 ## 目标与约束
@@ -9,16 +9,16 @@
 用户要求保留原始 Forward+、保留已有回归，允许从本机抓帧提取测试模型/纹理。
 按阶段实现、编译、GPU 验证，不把近似结果称为逐像素一致。
 
-- **保留工作区全部未提交修改和未跟踪源码，不要 reset/clean。** 先前 E669 与实时 AO 修改完整保留，并按新授权形成独立本地提交 `90d1af44ae`；E679 已提交为 `e4d1b1d96b`；本轮 E684 在验证后独立本地提交，不自动 push。
+- **保留工作区全部未提交修改和未跟踪源码，不要 reset/clean。** 先前 E669 与实时 AO 修改完整保留，并按新授权形成独立本地提交 `90d1af44ae`；E679 已提交为 `e4d1b1d96b`；E684 已提交为 `4954a9d6c4`；本轮 E699 在验证后独立本地提交，不自动 push。
 - 优先继续使用此工作目录。仅 checkout HEAD 或创建新 worktree 不会带上未提交/未跟踪文件，也不会带上忽略的抓帧素材。
-- 本轮已完成 E684 附件及实时灯光/引擎阴影/screen AO 接入；既有皮肤/脸/衣服/头发及实时 AO 保留并重验；没有待运行的后台构建或需要继续等待的任务。
+- 本轮已完成 E699 耳朵及实时灯光/引擎阴影/screen AO 接入；既有皮肤/脸/衣服/头发及实时 AO 保留并重验；没有待运行的后台构建或需要继续等待的任务。
 - 按 AGENTS.md 在完成验证的节点自动本地提交，无需再次确认；不自动 push。没有必要重新安装 RenderDoc MCP 或重新提取全部资源。
 
 ## 已完成
 
 1. 独立 Custom Forward、Bloom/LUT、E674 角色路径。
 2. E689 脸部 SDF 材质与捕获阴影图；E694 衣服法线/高光/环境反射/自发光；E704 头发双法线、双层各向异性高光、条纹。
-3. 完整静态角色 fixture：8 个 draw、52,489 顶点、61,618 三角形。E669/E674/E679/E684/E689/E694/E704 使用还原材质；仅 E699 耳朵仍是基础颜色诊断。
+3. 完整静态角色 fixture：8 个 draw、52,489 顶点、61,618 三角形。E669/E674/E679/E684/E689/E694/E699/E704 全部使用还原材质；基础色诊断开关保留。
 4. 可选 `--live-lights`：E704 实时深度轮廓光，方向光/点光/聚光灯场景绑定。测试覆盖相机投影、MSAA、缩放、灯光移动/隐藏/颜色/范围/删除/16 灯上限。
 5. E704 的引擎 Omni/Spot 阴影。模式 1/3 读取真实阴影，模式 0 保持不受阴影影响，模式 4 保持原有替换行为。新引擎已编译成功。
 
@@ -98,19 +98,30 @@
 - screen AO 沿用 min(manual AO, engine AO)，主光阴影单独计算，无脸部 SDF。正交/透视/MSAA4/尺寸及相机移动/0.75 缩放五种配置、手动 min 与阴影/SDF 独立诊断通过，原有测试全部保留。
 - 仅恢复捕获有效分支与可见子集，不宣称完整湿润/积雪/探针或逐像素一致。资源与命令见 `CAPTURE_E684_ACCESSORIES.md`；证据 `e684-gpu-validation.json`、`e684-debug-validation.json`，日志 `accessory-accessory_replay-regression.log` / `live-accessory-test.log`。
 
+## 最新完成：E699 耳朵
+
+- 新增 `ear.gdshader` / `ear_lighting.gdshaderinc`，按 E699 自身 shader 还原几何法线、参数贴图、ramp、解析高光 lookup 和环境反射；不是头发双法线/各向异性分支。Alternate 为 value 0.55、saturation 1.1，高光 lookup 用于主光与局部灯，反射用原 F0。
+- 复用 E704 base/parameters 与 E694 cube/global buffers；仅补取缺少的 lookup 和材质常量。原始 Forward+、公共材质函数和所有已有回归保留，无新增引擎 C++ 修改。
+- 独立 `ear_replay` / `compare_ear_replay.py` 固定 E694→E699 before/after hash，2522/2522 可见像素 HDR 编码全部一致，MAE/max=0、无漏像素；独立 Shader Debug (1250,1274)、primitive 783 的 final/surface/specular/reflection 断言通过。只代表本帧有效干燥分支与可见子集。
+- 径向回退使用耳朵自身原点，平移后为 (0.02294921875, *, 0.04833984375)；竖直 epsilon 精确为 2^-14。反汇编显示的 0.0001 已舍入，不能直接抄用，也不能复用衣服原点。
+- 完整角色八个 draw 已全部使用还原材质；默认耳朵 4906 轮廓像素、3360 种纹理颜色，高光/反射/shadow-AO 参数响应通过。live 使用现有 16 灯桥接、方向光级联、Omni/Spot 阴影与 min screen AO；主光阴影与 AO 分开，耳朵无脸部 SDF。
+- live 主光可见/完全遮挡 RGB 和 15744.0553/0，Omni/Spot 模式 1、3 均完全归零；模式 0/4、禁用/零 opacity、同位置 RID、16 灯上限及删除清理通过。五种 AO 配置、手动 min 与主光阴影/SDF 独立性诊断通过。live 三分之四视图已目检。
+- 详细资源、限制与复现命令见 `CAPTURE_E699_EARS.md`；证据 `e699-gpu-validation.json`、`e699-debug-validation.json`；日志 `ear-ear_replay-regression.log`、`live-ear-test.log`。
+
 ## 下一步（尚未开始）
 
-1. 仅剩 E699 耳朵为基础色诊断。先核对 E699 与 E704 头发的有效 shader/材质参数差异，复用已有资源，建立独立回放基线后接入完整角色；不要重复 E684 提取与接入。
+1. 八个 draw 的捕获有效材质均已还原。下一阶段优先针对完整角色局部遮挡和运动相机，量化方向光级联边缘/软阴影表现；复用现有 fixture 和素材，不重复提取或重建材质。
 2. 如提高阴影质量，增加局部遮挡边缘的级联过渡、软阴影定量测试；当前测试以完全覆盖为主，未承诺半影逐像素精度。
 3. 动态角色脸部 SDF 与几何自阴影的艺术效果仍可进一步调校；当前使用静态 posed mesh，没有骨骼动画还原。保留全部现有回归。
 
 ## 已验证基线
 
-最新构建：`build-custom-accessory.log`，成功，25.52 秒；刷新版本信息并重新链接，附件接入无需新增引擎 C++ 修改。运行环境 Windows / Vulkan / RTX 3050。
-最新 live 日志：`.renderdoc-analysis/live-accessory-test.log`，含 `CHARACTER_SCREEN_AO_OK`、`FACE_CLOTHES_ENGINE_SHADOWS_OK`、`CHARACTER_LIVE_OK`、`FULL_CHARACTER_OK`，无 shader/runtime 错误。
+最新构建：`build-custom-ear.log`，成功，26.25 秒；刷新版本信息并重新链接，耳朵接入无需新增引擎 C++ 修改。运行环境 Windows / Vulkan / RTX 3050。
+最新 live 日志：`.renderdoc-analysis/live-ear-test.log`，含 `CHARACTER_SCREEN_AO_OK`、`FACE_CLOTHES_ENGINE_SHADOWS_OK`、`CHARACTER_LIVE_OK`、`FULL_CHARACTER_OK`，无 shader/runtime 错误。
 
 | 检查 | 最新结果 |
 | --- | --- |
+| E699 HDR | 2522/2522 编码完全一致，MAE/max=0；独立 debug 通过 |
 | E684 HDR | 502/503 编码完全一致，MAE 6.4715871438e-7，唯一差异为一个编码步长；独立 debug 通过 |
 | E679 HDR | 513/513 编码完全一致，MAE/max=0；独立 debug RGB/法线通过 |
 | E669 HDR | 1866/1872 完全一致，MAE 1.0085581375e-5，所有误差 <=1 编码步长 |
@@ -123,8 +134,8 @@
 | 原始 Forward+ / Custom Forward | baseline smoke 均通过 |
 | 默认完整角色 / live 完整角色 | 均通过 |
 
-最新比较日志：`.renderdoc-analysis/accessory-{accessory_replay,iris_replay,skin_replay,material_replay,face_replay,clothes_surface_replay,clothes_replay,hair_replay}-regression.log` 及 `accessory-post-regression.log`。
-本轮全部重跑，误差维持上表基线。两管线 baseline smoke：`accessory-smoke-{custom_forward,forward_plus}.log`；默认完整角色：`accessory-full-character.log`；live 完整角色：`live-accessory-test.log`；基础色诊断：`accessory-albedo-character.log`。成功 marker 和无 ERROR 已核对。
+最新比较日志：`.renderdoc-analysis/ear-{ear_replay,accessory_replay,iris_replay,skin_replay,material_replay,face_replay,clothes_surface_replay,clothes_replay,hair_replay}-regression.log` 及 `ear-post-regression.log`。
+本轮全部重跑，误差维持上表基线。两管线 baseline smoke：`ear-smoke-{custom_forward,forward_plus}.log`；默认完整角色：`ear-full-character.log`；live 完整角色：`live-ear-test.log`；基础色诊断：`ear-albedo-character.log`。成功 marker 和无 ERROR 已核对。
 方向光证据另见 `hair-live-validation.json`、`hair-shadow-directional-{visible,blocked}.png`。
 最近独立审查未发现引擎局部阴影的 blocking/should-fix 问题。软阴影质量、多视图和大 cluster 性能未验证。
 
@@ -148,7 +159,7 @@ $evidence = 'E:/ZcxCode/godot/.renderdoc-analysis/endfield-frame37917/gbuffer-ma
 .\.venv\Scripts\python.exe tests/rendering/custom_forward/compare_hair_replay.py $evidence
 ```
 
-依次替换为 accessory_replay、iris_replay、skin_replay、material_replay、face_replay、clothes_replay、clothes_surface_replay；最后一个 Python 名称是 `compare_clothes_surface.py`。
+依次替换为 ear_replay、accessory_replay、iris_replay、skin_replay、material_replay、face_replay、clothes_replay、clothes_surface_replay；最后一个 Python 名称是 `compare_clothes_surface.py`。
 `post_process.gd` / `compare_post.py` 使用父目录 `.renderdoc-analysis/endfield-frame37917`。
 `smoke.gd` 分别用 `--rendering-method custom_forward` 和 `forward_plus`。
 检查成功 marker 和日志无 ERROR，不只看退出码：一些旧 GDScript helper 的 assert 可能没有使整个进程返回非零。
@@ -171,14 +182,14 @@ $evidence = 'E:/ZcxCode/godot/.renderdoc-analysis/endfield-frame37917/gbuffer-ma
 - E704 保留头部 object basis 和 tangent handedness；第二组法线不随背面翻转。
 - Shader Debug 必须指定最终可见 primitive；E704 (1220,1190) 是 4519。默认首个重叠三角形可能被遮挡。
 - captured HDR 回放的 mask/depth rejection 只是隔离可见像素，不代表完整 visibility 管线已还原。
-- 无 TAA/FSR2/multiview 阴影精度或性能承诺。仅 E699 耳朵材质仍未完成。
+- 无 TAA/FSR2/multiview 阴影精度或性能承诺。八个 draw 已还原当前捕获有效分支，其他天气/材质变体未验证。
 
 ## 入口文件
 
 以下路径相对仓库根目录，按需阅读，避免一次加载全部抓帧日志：
 
 - `servers/rendering/renderer_rd/custom_forward/README.md`
-- 同目录 `ENGINE_CHARACTER_SHADOWS.md`、`LIVE_CHARACTER.md`、`CAPTURE_E684_ACCESSORIES.md`、`CAPTURE_E679_IRIS.md`、`CAPTURE_E669_SKIN.md`、`CAPTURE_E704_HAIR.md`、`CAPTURE_E694_SURFACE.md`
+- 同目录 `ENGINE_CHARACTER_SHADOWS.md`、`LIVE_CHARACTER.md`、`CAPTURE_E699_EARS.md`、`CAPTURE_E684_ACCESSORIES.md`、`CAPTURE_E679_IRIS.md`、`CAPTURE_E669_SKIN.md`、`CAPTURE_E704_HAIR.md`、`CAPTURE_E694_SURFACE.md`
 - 同目录 `materials/hair.gdshader`、`hair_lighting.gdshaderinc`、`character_light_binding.gd`、`face*.gdshader*`、`clothes*.gdshader*`
 - `servers/rendering/renderer_rd/shaders/custom_forward/character_shadow_inc.glsl`、`scene_custom_forward.glsl`
 - `servers/rendering/renderer_rd/custom_forward/scene_shader_custom_forward.cpp`

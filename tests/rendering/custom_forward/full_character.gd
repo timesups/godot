@@ -75,6 +75,10 @@ func run() -> void:
 	accessory_shader.code = FileAccess.get_file_as_string(directory.path_join("accessory.gdshader"))
 	for include in ["character_lighting","clothes_surface","clothes_lighting","accessory_lighting","face_shadow"]:
 		accessory_shader.code = accessory_shader.code.replace('#include "%s.gdshaderinc"' % include,FileAccess.get_file_as_string(directory.path_join(include+".gdshaderinc")))
+	var ear_shader := Shader.new()
+	ear_shader.code = FileAccess.get_file_as_string(directory.path_join("ear.gdshader"))
+	for include in ["character_lighting","clothes_surface","clothes_lighting","ear_lighting","face_shadow"]:
+		ear_shader.code = ear_shader.code.replace('#include "%s.gdshaderinc"' % include,FileAccess.get_file_as_string(directory.path_join(include+".gdshaderinc")))
 	var skin_shader := Shader.new()
 	skin_shader.code = FileAccess.get_file_as_string(directory.path_join("skin.gdshader"))
 	for include in ["character_lighting","clothes_surface","clothes_lighting","skin_lighting","face_shadow"]:
@@ -167,6 +171,14 @@ func run() -> void:
 				material.set_shader_parameter(pair[0],clothes_texture(pair[1]))
 			material.set_shader_parameter("reflection_map",clothes_cube())
 			material.set_shader_parameter("radial_origin",Vector3(0.027648926,0,0.023254395))
+		if event == 699 and not albedo_only:
+			material.shader = ear_shader
+			material.set_shader_parameter("base_map",hair_texture(185700))
+			material.set_shader_parameter("parameters_map",hair_texture(187392))
+			material.set_shader_parameter("ramp_map",ear_texture(188148))
+			material.set_shader_parameter("specular_map",ear_texture(184121))
+			material.set_shader_parameter("reflection_map",clothes_cube())
+			material.set_shader_parameter("radial_origin",Vector3(0.02294921875,0,0.04833984375))
 		if event == 694 and not albedo_only:
 			material.shader = clothes_shader
 			for pair in [["base_map", 187399], ["normal_map", 187429], ["parameters_map", 187402]]:
@@ -240,6 +252,15 @@ func run() -> void:
 			assert((await snapshot()).get_data()!=textured.get_data(),"E684 shadow/AO had no effect")
 			original.set_shader_parameter("screen_shadow_ao",Vector2.ONE)
 			counts[instance.name]["lighting_response"] = "BC5 normal, analytic specular, reflection and shadow/AO passed"
+		if int(instance.get_meta("capture_event")) == 699 and not albedo_only:
+			for parameter in ["analytic_strength","reflection_strength"]:
+				original.set_shader_parameter(parameter,0.0)
+				assert((await snapshot()).get_data()!=textured.get_data(),"E699 parameter had no effect: "+parameter)
+				original.set_shader_parameter(parameter,1.0)
+			original.set_shader_parameter("screen_shadow_ao",Vector2(0,0))
+			assert((await snapshot()).get_data()!=textured.get_data(),"E699 shadow/AO had no effect")
+			original.set_shader_parameter("screen_shadow_ao",Vector2.ONE)
+			counts[instance.name]["lighting_response"] = "analytic lookup, reflection and shadow/AO passed"
 		if int(instance.get_meta("capture_event")) == 679 and not albedo_only:
 			for pair in [["parallax_strength",0.0,0.01],["matcap_strength",0.0,1.0],["iris_curvature",0.5,1.5]]:
 				original.set_shader_parameter(pair[0],pair[1])
@@ -473,13 +494,13 @@ func run() -> void:
 	assert(side.save_png(evidence.path_join(prefix + "-three-quarter.png")) == OK)
 	assert(front.get_data() != side.get_data())
 	var report := {"parts": 8, "triangles": total_triangles, "isolated_pixels": counts,
-		"mode": "live_e669_e679_e684_e689_e694_e704_shadows_ao" if live_lights and not albedo_only else "base_color_only" if albedo_only else ("e694_surface_diagnostics" if clothes_surface else "e669_e674_e679_e684_e689_e694_e704_lighting_plus_base_color_diagnostics"),
+		"mode": "live_e669_e679_e684_e689_e694_e699_e704_shadows_ao" if live_lights and not albedo_only else "base_color_only" if albedo_only else ("e694_surface_diagnostics" if clothes_surface else "e669_e674_e679_e684_e689_e694_e699_e704_lighting"),
 		"status": "passed", "scope": "Posed geometry/UV/texture integration, not full material parity"}
 	FileAccess.open(evidence.path_join(prefix + "-validation.json"), FileAccess.WRITE).store_string(JSON.stringify(report, "\t"))
 	print("FULL_CHARACTER_OK " + JSON.stringify(report))
 	if keep_open:
 		var label := Label.new()
-		label.text = "Captured posed mesh: 8 parts\n" + ("E669/E679/E684/E689/E694/E704 live shadows; AO except iris" if live_lights and not albedo_only else "Base-color diagnostics only" if albedo_only else ("E674 + E689 + E704 lighting; E694 surface inspection" if clothes_surface else "E669 + E674 + E679 + E684 + E689 + E694 + E704 lighting; other parts: base color")) + "\nOther material variants are not yet reconstructed"
+		label.text = "Captured posed mesh: 8 parts\n" + ("E669/E679/E684/E689/E694/E699/E704 live shadows; AO except iris" if live_lights and not albedo_only else "Base-color diagnostics only" if albedo_only else ("E674 + E689 + E704 lighting; E694 surface inspection" if clothes_surface else "E669 + E674 + E679 + E684 + E689 + E694 + E699 + E704 lighting")) + "\nOther material variants are not yet reconstructed"
 		label.position = Vector2(12, 12)
 		root.add_child(label)
 	else:
@@ -538,3 +559,9 @@ func iris_texture(id: int) -> Texture2D:
 	for mip in range(1,10 if id==186177 else 9):
 		data.append_array(FileAccess.get_file_as_bytes(evidence.path_join("e679-texture-%d-mip%d.dds" % [id,mip])).slice(148))
 	return ImageTexture.create_from_image(Image.create_from_data(bytes.decode_u32(16),bytes.decode_u32(12),true,Image.FORMAT_BPTC_RGBA,data))
+
+func ear_texture(id: int) -> ImageTexture:
+	var bytes := FileAccess.get_file_as_bytes(evidence.path_join("e699-texture-%d.dds" % id))
+	assert(bytes.size() >= 128 and bytes.slice(0,4).get_string_from_ascii() == "DDS ")
+	var data := bytes.slice(148 if bytes.slice(84,88).get_string_from_ascii()=="DX10" else 128)
+	return ImageTexture.create_from_image(Image.create_from_data(bytes.decode_u32(16),bytes.decode_u32(12),false,Image.FORMAT_RGBA8,data))

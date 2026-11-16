@@ -165,3 +165,15 @@ shadows. Modes 1/3 gate the complete local contribution once; modes 0/4 retain
 unshadowed/replacement behavior. Screen AO uses minimum in the existing AO channel,
 separate from main shadow and without face SDF. The existing shadow and five-case
 AO regression suites include E684 while retaining previous material cases.
+
+## E699 ears
+
+The full character now uses `ear.gdshader`, restoring all eight captured draws.
+E699 uses geometric normals, its own alternate color and analytic lookup,
+with reflection and the existing 16-light bridge, directional/Omni/Spot
+shadows and independently combined screen AO. It has no hair anisotropic
+lobes or face SDF. Existing shaders and regression cases are preserved.
+
+Independent captured HDR validation is exact for all 2522 visible pixels;
+see [capture evidence and commands](CAPTURE_E699_EARS.md). This statement is
+limited to the captured visible subset and active dry material branch.
