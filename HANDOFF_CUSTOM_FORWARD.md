@@ -28,7 +28,27 @@
 移除旧文件后的兼容启动器、双管线最小 smoke再次通过；执行器负向控制通过。
 独立复查无可操作发现。已核对底层 C++/内部 GLSL/构建规则无变更；无需重编引擎。
 
-## 后续入口
+## C# / .NET 编辑器（2026-11-16）
+
+已从 `5a924a3d67` 的引擎源码启用 `module_mono_enabled=yes`，生成绑定、
+Debug/Release GodotSharp、编辑器工具及 `4.7.3-rc` 本地 NuGet 包。
+复现入口：`.\.venv\Scripts\python.exe misc/build_custom_dotnet.py --jobs 12`；
+环境与分发说明见 `misc/CUSTOM_DOTNET.md`。
+二进制为 `bin/godot.windows.editor.x86_64.mono.console.exe`，配套目录为
+`bin/GodotSharp` 和 `bin/nupkgs`。原非 .NET 二进制 SHA256 保持不变。
+
+验证证据在 `.renderdoc-analysis/csharp-enablement/`：
+- `build-dotnet.log`：原生构建、绑定生成、程序集及包构建成功。
+- `full/run.json`：Endfield 完整 38 项通过（原 35 项加 C# 构建及双管线 GPU 场景）。
+- `editor-and-engine-final/run.json`：C# 双管线、解决方案、编辑器构建、引擎独立双管线 smoke 共7项通过。
+- `preservation-check.json`：888个历史基线文件哈希及原非 .NET 二进制保持不变。
+
+初次 C# probe 的 `mono` 特性标签不适用于本分支，改用真实 `CSharpScript` 类型；
+首次编辑器扫描把验证目录 `.obj` 当模型，项目通过 `artifacts/.gdignore` 排除产物。
+失败日志保留，最终检查全部通过。绑定生成器的重名方法警告和包 README 提示
+未阻断构建；本轮没有修改引擎渲染算法或绑定生成器。导出模板尚未构建。
+
+## 后续项目工作
 
 角色 atlas重建、E321/E301裁剪和项目材质组合在 Endfield 中继续；详见
 `E:/ZcxCode/Endfield/docs/CAPTURE_MAIN_SHADOW.md`。不要在引擎树恢复重复项目源码。
