@@ -249,6 +249,80 @@ float custom_forward_local_shadow(uvec2 light_id, bool is_spot, vec3 vertex, vec
 }
 
 #ifndef SHADOWS_DISABLED
+// PCSS blocker search must not mistake the sloped receiver for an occluder.
+// Keep raw blocker averages and the original filtering for actual occluders.
+half custom_directional_soft_shadow(texture2D shadow, vec3 pssm_coord, vec2 tex_scale, float taa_frame_count, mat4 shadow_matrix, vec3 vertex, vec3 light_dir, float bias, vec3 dx, vec3 dy) {
+	vec3 x = (shadow_matrix * vec4(dx, 0.0)).xyz;
+	vec3 y = (shadow_matrix * vec4(dy, 0.0)).xyz;
+	float det = x.x * y.y - x.y * y.x;
+	vec3 plane_normal = cross(dx, dy);
+	bool valid_plane = bias > 0.0 && abs(det) > 1e-12 && abs(dot(plane_normal, light_dir)) > 0.1 * length(plane_normal);
+	vec2 gradient = valid_plane ? vec2(x.z * y.y - y.z * x.y, y.z * x.x - x.z * y.x) / det : vec2(0.0);
+	vec3 plane = (shadow_matrix * vec4(vertex + light_dir * bias, 1.0)).xyz;
+	//find blocker
+	float blocker_count = 0.0;
+	float blocker_average = 0.0;
+
+	mat2 disk_rotation;
+	{
+		float r = quick_hash(gl_FragCoord.xy + vec2(taa_frame_count * 5.588238)) * 2.0 * M_PI;
+		float sr = sin(r);
+		float cr = cos(r);
+		disk_rotation = mat2(vec2(cr, -sr), vec2(sr, cr));
+	}
+
+	SPEC_CONSTANT_LOOP_ANNOTATION
+	for (uint i = 0; i < sc_directional_penumbra_shadow_samples(); i++) {
+		vec2 suv = pssm_coord.xy + (disk_rotation * scene_data_block.data.directional_penumbra_shadow_kernel[i].xy) * tex_scale;
+		float d = textureLod(sampler2D(shadow, SAMPLER_LINEAR_CLAMP), suv, 0.0).r;
+		// Reject the receiver itself without changing accepted blocker depths or
+		// the final PCF comparisons. Fade the rejection near grazing incidence.
+		float plane_weight = valid_plane ? smoothstep(0.1, 0.2, abs(dot(plane_normal, light_dir)) / length(plane_normal)) : 0.0;
+		float receiver_depth = mix(pssm_coord.z, max(pssm_coord.z, plane.z + dot(suv - plane.xy, gradient)), plane_weight);
+		bool receiver_sample = false;
+		if (d > pssm_coord.z && d <= receiver_depth) {
+			// A bilinear sample crossing a caster silhouette and clear depth can
+			// accidentally look coplanar. Only reject a fully covered footprint.
+			ivec2 size = textureSize(sampler2D(shadow, SAMPLER_LINEAR_CLAMP), 0);
+			ivec2 base = ivec2(floor(suv * vec2(size) - 0.5));
+			receiver_sample = true;
+			for (int sy = 0; sy < 2; sy++) {
+				for (int sx = 0; sx < 2; sx++) {
+					ivec2 pixel = clamp(base + ivec2(sx, sy), ivec2(0), size - 1);
+					float stored = texelFetch(sampler2D(shadow, SAMPLER_LINEAR_CLAMP), pixel, 0).r;
+					vec2 center = (vec2(pixel) + 0.5) / vec2(size);
+					receiver_sample = receiver_sample && stored > 0.0 && stored <= plane.z + dot(center - plane.xy, gradient);
+				}
+			}
+		}
+		if (d > pssm_coord.z && !receiver_sample) {
+			blocker_average += d;
+			blocker_count += 1.0;
+		}
+	}
+
+	if (blocker_count > 0.0) {
+		//blockers found, do soft shadow
+		blocker_average /= blocker_count;
+		float penumbra = (-pssm_coord.z + blocker_average) / (1.0 - blocker_average);
+		tex_scale *= penumbra;
+
+		float s = 0.0;
+
+		SPEC_CONSTANT_LOOP_ANNOTATION
+		for (uint i = 0; i < sc_directional_penumbra_shadow_samples(); i++) {
+			vec2 suv = pssm_coord.xy + (disk_rotation * scene_data_block.data.directional_penumbra_shadow_kernel[i].xy) * tex_scale;
+			s += textureProj(sampler2DShadow(shadow, shadow_sampler), vec4(suv, pssm_coord.z, 1.0));
+		}
+
+		return half(s / float(sc_directional_penumbra_shadow_samples()));
+
+	} else {
+		//no blockers found, so no shadow
+		return half(1.0);
+	}
+}
+
 // A short receiver-plane contact query complements the biased PCF/PCSS result.
 // It never substitutes for distant/soft shadows and does not consume AO.
 float custom_directional_contact(mat4 shadow_matrix, vec3 vertex, vec3 light_dir, float bias, vec3 dx, vec3 dy) {
@@ -339,7 +413,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				float range_begin = directional_lights.data[i].shadow_range_begin.x;
 				float test_radius = (range_pos - range_begin) * directional_lights.data[i].softshadow_angle;
 				vec2 tex_scale = directional_lights.data[i].uv_scale1 * test_radius;
-				shadow = sample_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count);
+				shadow = custom_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count, directional_lights.data[i].shadow_matrix1, vertex, light_dir, directional_lights.data[i].shadow_bias[0], receiver_dx, receiver_dy);
 				shadow = min(shadow, contact_shadow);
 				blend_count++;
 			}
@@ -357,7 +431,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				float range_begin = directional_lights.data[i].shadow_range_begin.y;
 				float test_radius = (range_pos - range_begin) * directional_lights.data[i].softshadow_angle;
 				vec2 tex_scale = directional_lights.data[i].uv_scale2 * test_radius;
-				float s = sample_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count);
+				float s = custom_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count, directional_lights.data[i].shadow_matrix2, vertex, light_dir, directional_lights.data[i].shadow_bias[1], receiver_dx, receiver_dy);
 				s = min(s, contact_shadow);
 
 				if (blend_count == 0) {
@@ -384,7 +458,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				float range_begin = directional_lights.data[i].shadow_range_begin.z;
 				float test_radius = (range_pos - range_begin) * directional_lights.data[i].softshadow_angle;
 				vec2 tex_scale = directional_lights.data[i].uv_scale3 * test_radius;
-				float s = sample_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count);
+				float s = custom_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count, directional_lights.data[i].shadow_matrix3, vertex, light_dir, directional_lights.data[i].shadow_bias[2], receiver_dx, receiver_dy);
 				s = min(s, contact_shadow);
 
 				if (blend_count == 0) {
@@ -411,7 +485,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				float range_begin = directional_lights.data[i].shadow_range_begin.w;
 				float test_radius = (range_pos - range_begin) * directional_lights.data[i].softshadow_angle;
 				vec2 tex_scale = directional_lights.data[i].uv_scale4 * test_radius;
-				float s = sample_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count);
+				float s = custom_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count, directional_lights.data[i].shadow_matrix4, vertex, light_dir, directional_lights.data[i].shadow_bias[3], receiver_dx, receiver_dy);
 				s = min(s, contact_shadow);
 
 				if (blend_count == 0) {

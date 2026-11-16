@@ -5,6 +5,7 @@ var output := ""
 var evidence := ""
 var reference := false
 var contact := false
+var pcss_plane := false
 var camera: Camera3D
 var sun: DirectionalLight3D
 var material: ShaderMaterial
@@ -71,6 +72,9 @@ func run() -> void:
 		if arg.begins_with("--evidence="): evidence=arg.trim_prefix("--evidence=")
 		if arg=="--reference": reference=true
 		if arg=="--contact": contact=true
+		if arg=="--pcss-plane":
+			pcss_plane=true
+			contact=true
 	var expected_renderer := "forward_plus" if reference else "custom_forward"
 	if output.is_empty() or not FileAccess.file_exists(evidence.path_join("character-manifest.json")) or RenderingServer.get_current_rendering_method()!=expected_renderer:
 		push_error("Specify --output, --evidence and a supported renderer")
@@ -268,6 +272,42 @@ func run() -> void:
 			camera.position=bounds.get_center()+(Vector3(2,0.3,2) if side else Vector3(0,0,3))
 			camera.look_at(bounds.get_center())
 			await sample_case("contact_face_side%d" % int(side),"contact_face")
+	if pcss_plane:
+		for part in character_parts: part.hide()
+		receiver.show()
+		camera.position=Vector3(0,0,3)
+		camera.rotation=Vector3.ZERO
+		for perspective in [false,true]:
+			camera.projection=Camera3D.PROJECTION_PERSPECTIVE if perspective else Camera3D.PROJECTION_ORTHOGONAL
+			for quality in [RenderingServer.SHADOW_QUALITY_SOFT_LOW,RenderingServer.SHADOW_QUALITY_SOFT_HIGH]:
+				RenderingServer.directional_soft_shadow_filter_set_quality(quality)
+				for direction in [Vector2(0,60),Vector2(0,75),Vector2(30,60),Vector2(-30,-60)]:
+					sun.rotation_degrees=Vector3(direction.x,direction.y,0)
+					material.set_shader_parameter("light_direction",sun.global_basis.z)
+					for angle in [2.0,5.0]:
+						sun.light_angular_distance=angle
+						var label := "pcss_p%d_q%d_x%d_y%d_a%d" % [int(perspective),quality,int(direction.x),int(direction.y),int(angle)]
+						blocker.hide()
+						receiver.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+						await sample_case(label+"_clear","pcss_clear")
+						receiver.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+						blocker.show()
+						blocker.position=sun.global_basis.z*(0.002/sun.global_basis.z.z)
+						await sample_case(label+"_blocked","pcss_blocked",0.002)
+		# Distant casters cannot be rescued by the short contact query. Exercise
+		# partial footprints at oblique PCSS edges against the unchanged renderer.
+		RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_HIGH)
+		receiver.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		for perspective in [false,true]:
+			camera.projection=Camera3D.PROJECTION_PERSPECTIVE if perspective else Camera3D.PROJECTION_ORTHOGONAL
+			for yaw in [60,75]:
+				sun.rotation_degrees=Vector3(0,yaw,0)
+				material.set_shader_parameter("light_direction",sun.global_basis.z)
+				for angle in [2.0,5.0]:
+					sun.light_angular_distance=angle
+					for gap in [0.25,0.5]:
+						blocker.position=sun.global_basis.z*(gap/sun.global_basis.z.z)
+						await sample_case("pcss_edge_p%d_y%d_a%d_g%.2f" % [int(perspective),yaw,int(angle),gap],"pcss_edge",gap)
 	FileAccess.open(output.path_join("cases.json"),FileAccess.WRITE).store_string(JSON.stringify(records,"\t"))
 	print("CHARACTER_SHADOW_BIAS_CAPTURE_OK cases=%d reference=%s" % [records.size(),reference])
 	quit(0)

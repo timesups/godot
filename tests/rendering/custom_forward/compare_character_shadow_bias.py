@@ -11,7 +11,10 @@ parser.add_argument("character", type=Path)
 parser.add_argument("reference", type=Path)
 parser.add_argument("--contact", action="store_true", help="Require receiver-plane near-contact correction")
 parser.add_argument("--baseline", type=Path, help="Unmodified Custom Forward 193-case capture")
+parser.add_argument("--pcss-plane", action="store_true", help="Require PCSS receiver rejection and additional oblique cases")
+parser.add_argument("--contact-baseline", type=Path, help="Unmodified 249-case contact correction capture")
 args = parser.parse_args()
+assert not args.pcss_plane or (args.contact and args.contact_baseline), "PCSS validation requires both prior baselines"
 assert not args.contact or args.baseline, "Contact validation needs the unchanged renderer baseline"
 cases = json.loads((args.character / "cases.json").read_text())
 assert cases == json.loads((args.reference / "cases.json").read_text()), "Scene configurations differ"
@@ -33,7 +36,13 @@ if args.contact:
     expected |= {"contact_face_side0", "contact_face_side1"}
     expected |= {f"contact_grazing_y{yaw:.1f}" for yaw in [83.9, 84.1, 84.2, 84.3, 84.4, 84.6]}
     assert json.loads((args.baseline / "cases.json").read_text()) == cases[:193]
-assert len(cases) == len(expected) == (249 if args.contact else 193) and {c["name"] for c in cases} == expected
+if args.pcss_plane:
+    expected |= {f"pcss_p{p}_q{q}_x{x}_y{y}_a{angle}_{kind}" for p in [0, 1] for q in [2, 4]
+                 for x, y in [(0, 60), (0, 75), (30, 60), (-30, -60)] for angle in [2, 5] for kind in ["clear", "blocked"]}
+    expected |= {f"pcss_edge_p{p}_y{yaw}_a{angle}_g{gap:.2f}" for p in [0, 1] for yaw in [60, 75]
+                 for angle in [2, 5] for gap in [.25, .5]}
+    assert json.loads((args.contact_baseline / "cases.json").read_text()) == cases[:249]
+assert len(cases) == len(expected) == (329 if args.pcss_plane else 249 if args.contact else 193) and {c["name"] for c in cases} == expected
 
 
 def load(root, name):
@@ -42,6 +51,7 @@ def load(root, name):
     return np.where(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055) ** 2.4)
 
 
+contact_baseline_names = {c["name"] for c in cases[:249]} if args.pcss_plane else set()
 images = {}
 report = {"cases": [], "preview": {}}
 for case in cases:
@@ -60,12 +70,15 @@ for case in cases:
         original_delta = np.abs(original[..., 0] - b[..., 0])[mask]
         assert original_delta.mean() < .005 and original_delta.max() < .015, f"Baseline reference mismatch: {name}"
         change = a[..., 0] - original[..., 0]
-        assert change[mask].max() < .009, f"Contact correction brightened shadows: {name}"
+        if not args.pcss_plane or case["angle"] == 0:
+            assert change[mask].max() < .009, f"Contact correction brightened shadows: {name}"
         if case["kind"] in ["sphere", "ellipsoid", "ortho_sphere", "preview_curve"]:
             lit = mask & (a[..., 1] > .7)
             assert change[lit].mean() > -.001, f"Contact correction added curve acne: {name}"
         if case["bias"] == 0:
             assert np.array_equal(a, original), f"Zero-bias fallback changed: {name}"
+    if args.pcss_plane and name in contact_baseline_names and case["angle"] == 0:
+        assert np.array_equal(a, load(args.contact_baseline, name)), f"PCF path changed: {name}"
     report["cases"].append(dict(case, reference_mae=float(delta.mean()), reference_max=float(delta.max())))
     if name.startswith("preview_"):
         assert not case["blend"], "Preview split blending changed"
@@ -138,7 +151,7 @@ if args.contact:
             clear = contact(prefix + "clear")
             reference_clear = float(load(args.reference, prefix + "clear")[120:200, 125:195, 0].mean())
             assert clear >= reference_clear - .005, f"Contact query added plane acne: {prefix} {clear}/{reference_clear}"
-            if yaw <= 30:
+            if args.pcss_plane or yaw <= 30:
                 assert clear > .99, f"Receiver plane self-shadowed: {prefix} {clear}"
             values = [contact(prefix + f"g{gap:.3f}") for gap in [.002, .004, .008, .016, .032]]
             assert max(values) < .01, f"Near-contact leak: {prefix} {values}"
@@ -154,5 +167,43 @@ if args.contact:
     grazing = [contact(f"contact_grazing_y{yaw:.1f}") for yaw in [83.9, 84.1, 84.2, 84.3, 84.4, 84.6]]
     assert np.abs(np.diff(grazing)).max() < .05, f"Grazing fallback discontinuity: {grazing}"
     report["contact"]["grazing"] = grazing
+if args.pcss_plane:
+    report["pcss_planes"] = {}
+    report["pcss_negative_controls"] = {}
+    for yaw in [60, 75]:
+        name = f"contact_y{yaw}_a2_clear"
+        old_visibility = float(load(args.contact_baseline, name)[120:200, 125:195, 0].mean())
+        assert old_visibility < .99, f"Baseline no longer exposes oblique PCSS acne: {name}"
+        report["pcss_negative_controls"][name] = old_visibility
+    for name in sorted(expected):
+        if not name.startswith("pcss_") or name.startswith("pcss_edge_"):
+            continue
+        visibility = contact(name)
+        assert visibility > .99 if name.endswith("clear") else visibility < .01, f"Oblique PCSS visibility: {name} {visibility}"
+        report["pcss_planes"][name] = visibility
+    report["pcss_edges"] = {}
+    for name in sorted(expected):
+        if not name.startswith("pcss_edge_"):
+            continue
+        a, b = images[name][..., 0], load(args.reference, name)[..., 0]
+        delta = np.abs(a - b)
+        assert delta.mean() < .005 and delta.max() < .015, f"Oblique PCSS edge mismatch: {name} {delta.mean()}/{delta.max()}"
+        dark, lit = float(a[152:168, 152:168].mean()), float(a[:20, :20].mean())
+        # At 75 degrees the finite sheet's two penumbrae overlap for wide
+        # lights/distant casters: its center is not necessarily a full umbra.
+        # Require real shadow contrast and clear corners, plus strict full-image
+        # reference parity above. The narrow/near case must retain its umbra.
+        assert dark < .8 and lit > .99, f"Oblique distant visibility lost: {name} {dark}/{lit}"
+        if "_a2_g0.25" in name:
+            assert dark < .01, f"Oblique distant umbra leaked: {name} {dark}"
+        transition = int(((a > .05) & (a < .95)).sum())
+        assert transition > 50, f"Oblique PCSS penumbra vanished: {name}"
+        report["pcss_edges"][name] = dict(mae=float(delta.mean()), maximum=float(delta.max()), dark=dark, lit=lit, transition=transition)
+    for p in [0, 1]:
+        for yaw in [60, 75]:
+            counts = {(angle, gap): report["pcss_edges"][f"pcss_edge_p{p}_y{yaw}_a{angle}_g{gap:.2f}"]["transition"]
+                      for angle in [2, 5] for gap in [.25, .5]}
+            assert all(counts[5, gap] > counts[2, gap] for gap in [.25, .5]), f"Oblique angular penumbra failed: {counts}"
+            assert all(counts[angle, .5] > counts[angle, .25] for angle in [2, 5]), f"Oblique distance penumbra failed: {counts}"
 (args.character / "validation.json").write_text(json.dumps(report, indent=2) + "\n")
 print(f"CHARACTER_SHADOW_BIAS_OK cases={len(cases)} contact={args.contact} " + json.dumps(report["preview"]))
