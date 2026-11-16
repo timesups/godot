@@ -3,6 +3,9 @@ render_mode custom_character, cull_disabled;
 
 #ifdef CHARACTER_ENGINE_SHADOWS
 render_mode custom_character_shadows;
+render_mode custom_character_ao;
+// Read SSAO only for live, depth-writing characters; combine with manual AO by min.
+uniform bool engine_screen_ao_enabled = true;
 uniform bool engine_directional_shadows_enabled = true;
 uniform bool engine_local_shadows_enabled = true;
 uniform uint main_shadow_id_low = 0u;
@@ -92,14 +95,18 @@ void fragment() {
 	// SDF already shapes the ramp. External visibility affects direct irradiance
 	// once, not the ramp, AO, environment or the final combined result.
 	float main_visibility = 1.0;
+	float screen_ao = face_ao;
 #ifdef CHARACTER_ENGINE_SHADOWS
+	if (engine_screen_ao_enabled) {
+		screen_ao = min(screen_ao,custom_forward_screen_ao(SCREEN_UV));
+	}
 	if (engine_directional_shadows_enabled) {
 		main_visibility = custom_forward_directional_shadow(uvec2(main_shadow_id_low,main_shadow_id_high),
 				(VIEW_MATRIX*vec4(face_world,1.0)).xyz,normalize(mat3(VIEW_MATRIX)*n)*(FRONT_FACING?1.0:-1.0));
 	}
 #endif
 	vec3 result = face_lighting(base, graded, mask, sdf, ramp, texture(face_specular, specular_uv, mip_bias).rgb,
-			n, view, radial, camera_z, local_light, basis, face_ao, main_color * main_energy * main_visibility, environment_color,
+			n, view, radial, camera_z, local_light, basis, screen_ao, main_color * main_energy * main_visibility, environment_color,
 			environment_direction, environment_curve, environment_strength, character_exposure,
 			shadow_strength, rim_tint, rim_strength, surface_color, light_normal, diffuse_base);
 	for (int i = 0; i < min(local_light_count, 8); i++) {

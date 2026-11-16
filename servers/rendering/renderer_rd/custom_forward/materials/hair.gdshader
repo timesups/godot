@@ -7,6 +7,9 @@ render_mode depth_prepass_alpha, custom_character_shadows;
 uniform sampler2D hair_scene_depth : hint_depth_texture, filter_nearest, repeat_disable;
 uniform bool realtime_rim_enabled = true;
 uniform bool engine_local_shadows_enabled = true;
+render_mode custom_character_ao;
+// Read SSAO only for live, depth-writing characters; combine with manual AO by min.
+uniform bool engine_screen_ao_enabled = true;
 uniform bool engine_directional_shadows_enabled = true;
 uniform uint main_shadow_id_low = 0u;
 uniform uint main_shadow_id_high = 0u;
@@ -46,7 +49,7 @@ uniform vec3 secondary_tint = vec3(0.258182913,0.0063984147,0.0);
 // HAIR_REALTIME_DEPTH computes it from the scene depth prepass instead.
 uniform float local_rim_visibility[16];
 // Explicit inputs, optionally updated by character_light_binding.gd.
-// Live hair multiplies the explicit main shadow by engine visibility; AO stays explicit.
+// Live hair applies engine main visibility and combines explicit AO with SSAO separately.
 uniform vec2 screen_shadow_ao = vec2(1.0);
 uniform int local_light_count : hint_range(0,16) = 0;
 uniform vec4 local_positions[16]; // xyz position, w inverse range
@@ -78,6 +81,9 @@ void vertex() {
 void fragment() {
 	vec2 main_screen = screen_shadow_ao;
 #ifdef HAIR_REALTIME_DEPTH
+	if (engine_screen_ao_enabled) {
+		main_screen.y = min(main_screen.y,custom_forward_screen_ao(SCREEN_UV));
+	}
 	if (engine_directional_shadows_enabled) {
 		main_screen.x *= custom_forward_directional_shadow(uvec2(main_shadow_id_low,main_shadow_id_high),
 				(VIEW_MATRIX*vec4(hair_world,1.0)).xyz,

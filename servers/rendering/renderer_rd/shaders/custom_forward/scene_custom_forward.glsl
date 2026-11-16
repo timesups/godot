@@ -1182,6 +1182,21 @@ uint cluster_get_range_clip_mask(uint i, uint z_min, uint z_max) {
 
 #endif //!MODE_RENDER DEPTH
 
+#ifdef CUSTOM_CHARACTER_AO_USED
+float custom_forward_screen_ao(vec2 screen_uv) {
+#ifndef MODE_RENDER_DEPTH
+	if (bool(implementation_data.ss_effects_flags & SCREEN_SPACE_EFFECTS_FLAGS_CHARACTER_SSAO)) {
+#ifdef USE_MULTIVIEW
+		return textureLod(sampler2DArray(ao_buffer, SAMPLER_LINEAR_CLAMP), vec3(screen_uv, ViewIndex), 0.0).r;
+#else
+		return textureLod(sampler2D(ao_buffer, SAMPLER_LINEAR_CLAMP), screen_uv, 0.0).r;
+#endif
+	}
+#endif
+	return 1.0;
+}
+#endif
+
 #ifdef CUSTOM_LOCAL_SHADOW_USED
 #ifndef MODE_RENDER_DEPTH
 #include "character_shadow_inc.glsl"

@@ -61,7 +61,7 @@ def prepare(root):
         parts.append({"event": event, "gbuffer_event": gbuffer, "name": name,
                       "variant": variant, "pixel_shader": pixel_shader, "base_texture": texture,
                       "auxiliary_textures": auxiliary,
-                      "material_status": "validated_lighting" if event == 674 else ("reconstructed_e689_measured" if event == 689 else ("reconstructed_e694_measured" if event == 694 else ("reconstructed_e704_measured" if event == 704 else "base_color_diagnostic_only"))),
+                      "material_status": "reconstructed_e669_measured" if event == 669 else "validated_lighting" if event == 674 else ("reconstructed_e689_measured" if event == 689 else ("reconstructed_e694_measured" if event == 694 else ("reconstructed_e704_measured" if event == 704 else "base_color_diagnostic_only"))),
                       "vertex_count": len(vertices), "index_count": len(indices),
                       "vertex_stride": m["vertexByteStride"], "vertex_offset": m["vertexByteOffset"],
                       "index_stride": m["indexByteStride"], "index_offset": m["indexByteOffset"],
@@ -69,6 +69,10 @@ def prepare(root):
                       "bounds_max": vertices[:, 8:11].max(axis=0).tolist()})
     for name in ["texture-172496.dds", "texture-186593.dds"]:
         retain(name)
+    for tid in [185721,185726]:
+        for mip in range(11):
+            suffix = f"-mip{mip}" if mip else ""
+            retain(f"e669-texture-{tid}{suffix}.dds")
     retain("e674-record0-transform.bin")
     retain("e689-record0-transform.bin")
     for tid, levels in [(37722, 9), (4874, 1), (37745, 10), (53468, 1)]:

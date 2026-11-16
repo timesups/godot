@@ -43,7 +43,7 @@ penumbra quality and multiview are not validated.
 Live hair applies engine visibility in modes 1 and 3. Mode 0 remains unshadowed
 and mode 4 retains its captured replacement behavior. Geometry normals supply
 shadow bias. `engine_local_shadows_enabled=false` restores the manual atlas/
-radial fallback path. Screen AO remains explicit.
+radial fallback path. Screen AO is a separate live input; see LIVE_CHARACTER.md.
 Live face/clothes also use these functions (see below). This implementation scans
 a cluster per explicit local light; larger light populations need profiling.
 
@@ -155,3 +155,13 @@ RTX 3050 main RGB sums: E689 visible 30245.5303 / blocked 0; E694 visible
 Evidence: `face-clothes-engine-shadow-validation.json`,
 `e{689,694}-engine-directional-blocked.png`, and
 `.renderdoc-analysis/live-face-clothes-shadow-test.log`.
+
+## E669 skin extension
+
+The skin live variant reuses `CHARACTER_ENGINE_SHADOWS` and the 16-light binding.
+Main visibility enters its existing screen-shadow channel; screen AO independently
+uses minimum with manual AO. Local modes 1/3 gate the complete contribution once,
+while 0/4 retain their original behavior. `live_material_shadows.gd` now covers
+E669 as well as face/clothes, preserving all older cases and output markers.
+Main visible/blocked sums are 34876.3107/0; Omni/Spot 1/3 fully blocked sums are 0.
+See `CAPTURE_E669_SKIN.md` and `.renderdoc-analysis/live-skin-test.log` for evidence.

@@ -769,6 +769,12 @@ uint32_t RenderCustomForward::_setup_environment(const RenderDataRD *p_render_da
 				}
 			}
 		}
+		// Opaque characters using depth textures (hair) shade in the transparent
+		// pass but still correspond to the prepass depth used by SSAO. Do not
+		// enable stock transparent SSAO; expose a separate opt-in character flag.
+		if (environment_get_ssao_enabled(p_render_data->environment) && rd.is_valid() && rd->has_texture(RB_SCOPE_SSAO, RB_FINAL)) {
+			ss_flags |= (1 << 4);
+		}
 		scene_state.ubo.ss_effects_flags = ss_flags;
 	} else {
 		scene_state.ubo.ss_effects_flags = 0;

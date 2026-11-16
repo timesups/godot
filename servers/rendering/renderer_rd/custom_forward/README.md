@@ -374,3 +374,27 @@ all three materials. Face external visibility affects direct irradiance once,
 preserving SDF ramp shading and environment. Local shadows gate the completed
 face/clothes contribution so SDF highlights cannot bypass occlusion. See
 `ENGINE_CHARACTER_SHADOWS.md` for the tested composition and remaining limits.
+
+### Live screen AO for E669/E689/E694/E704
+
+The live variants sample the existing SSAO buffer through
+`custom_forward_screen_ao(SCREEN_UV)` with `custom_character_ao`. Engine AO and
+manual AO combine by minimum in each material's existing AO input; directional
+visibility and face SDF remain independent. `engine_screen_ao_enabled=false`
+restores manual AO. Live preview enables environment SSAO. Depth-writing hair
+reads the buffer in its later color pass through an independent character flag;
+stock transparent lighting and original Forward+ are unchanged.
+
+See `LIVE_CHARACTER.md` for GPU coverage and limits, and
+`tests/rendering/custom_forward/live_character_ao.gd` for regression checks.
+
+## E669 skin
+
+E669 now uses the captured dry-skin material with BC5 normal mapping, LUT/ramp,
+view-dependent rim tint and analytic specular. Its live variant uses the existing
+16-light bridge, full-RID directional/local shadows and independent screen AO.
+Local modes 1/3 gate the complete contribution once; modes 0/4 retain their behavior.
+AO combines by minimum in the existing input; skin has no face SDF.
+See [CAPTURE_E669_SKIN.md](CAPTURE_E669_SKIN.md) for resources, independent HDR
+comparison (1866/1872 exact, all within one encoded step), live coverage and limits.
+The previous material and post-process regression cases remain intact.

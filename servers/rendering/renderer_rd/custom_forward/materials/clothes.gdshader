@@ -3,6 +3,9 @@ render_mode custom_character, cull_disabled;
 
 #ifdef CHARACTER_ENGINE_SHADOWS
 render_mode custom_character_shadows;
+render_mode custom_character_ao;
+// Read SSAO only for live, depth-writing characters; combine with manual AO by min.
+uniform bool engine_screen_ao_enabled = true;
 uniform bool engine_directional_shadows_enabled = true;
 uniform bool engine_local_shadows_enabled = true;
 uniform uint main_shadow_id_low = 0u;
@@ -41,7 +44,7 @@ uniform float reflection_strength = 1.0;
 uniform vec3 emission_tint = vec3(1.0,0.838799119,0.0);
 uniform float emission_strength = 2.0;
 // Explicit defaults; CHARACTER_ENGINE_SHADOWS enables the live Light3D bridge.
-// Screen AO remains an explicit input.
+// Manual AO remains available; live SSAO combines with it without multiplication.
 uniform vec2 screen_shadow_ao = vec2(1.0);
 uniform int local_light_count : hint_range(0,16) = 0;
 uniform vec4 local_positions[16]; // xyz position, w inverse range
@@ -80,6 +83,9 @@ void fragment() {
 	vec3 camera_axis = INV_VIEW_MATRIX[2].xyz;
 	vec2 main_screen = screen_shadow_ao;
 #ifdef CHARACTER_ENGINE_SHADOWS
+	if (engine_screen_ao_enabled) {
+		main_screen.y = min(main_screen.y,custom_forward_screen_ao(SCREEN_UV));
+	}
 	if (engine_directional_shadows_enabled) {
 		main_screen.x *= custom_forward_directional_shadow(uvec2(main_shadow_id_low,main_shadow_id_high),
 				(VIEW_MATRIX*vec4(clothes_world,1.0)).xyz,normalize(mat3(VIEW_MATRIX)*geometric));

@@ -60,14 +60,14 @@ Optional per-light metadata:
 Spot cones use their world -Z direction, angle and the captured squared cone
 falloff. Godot `spot_angle_attenuation` is not mapped. Energy uses `light_energy`,
 not physical intensity or exposure normalization. Bake modes, projector textures,
-area lights and directional cascaded shadow maps are not bridged. Live E704 now
+and area lights are not bridged. Live E704 now
 uses engine Omni/Spot shadow maps in modes 1 and 3; see
 [ENGINE_CHARACTER_SHADOWS.md](ENGINE_CHARACTER_SHADOWS.md). The bridge disables
 the captured explicit-atlas flag to prevent stale slot matrices after reordering.
 The default/manual material retains its radial fallback; live hair replaces that
 fallback with engine visibility (one when a light has no engine shadow).
 Live hair also resolves the bound main directional light by RID and samples its
-cascaded shadows; screen AO remains an explicit input. E689 and E694 opt in via `CHARACTER_ENGINE_SHADOWS`; the live fixture binds
+cascaded shadows. Live screen AO now samples the engine SSAO buffer separately. E689 and E694 opt in via `CHARACTER_ENGINE_SHADOWS`; the live fixture binds
 them alongside hair. See ENGINE_CHARACTER_SHADOWS.md for face SDF composition.
 
 ## Validation
@@ -92,3 +92,48 @@ Multiview, TAA/FSR2 rim behavior and transparent occluders are not validated.
 
 Existing E674/E689/E694/E704 HDR, E694 surface, full-character, Bloom/LUT and
 ordinary-material smoke regressions must continue to pass separately.
+
+## Live screen AO
+
+Live E669/E689/E694/E704 enable `custom_character_ao` and
+`custom_forward_screen_ao(SCREEN_UV)`. The existing material inputs become
+`min(face_ao, engine_ao)` or `min(screen_shadow_ao.y, engine_ao)`; the main shadow
+channel and face SDF are not changed. There is no extra final-color AO multiply.
+Set `engine_screen_ao_enabled=false` to use only the manual material AO.
+Environment SSAO enable/radius/intensity/power control the generated buffer.
+Stock SSAO direct-light/AO-channel affect controls are not re-applied: the
+reconstructed material's own lighting functions determine how AO affects light.
+
+The engine generates SSAO after depth/normal prepass and before opaque shading.
+Hair's opaque depth prepass also participates, although its depth-texture read
+schedules color in the transparent pass. A separate Custom Forward flag exposes
+that same AO buffer to these opt-in materials without enabling stock transparent
+SSAO. Only geometry represented in the prepass can safely use this interface;
+ordinary blended transparent receivers/occluders are outside its scope.
+Depth/shadow passes and SSAO-disabled or unavailable views return one.
+
+`live_character_ao.gd` checks all four real captured materials with contact and
+moving occluders, orthographic/perspective cameras, camera movement, resized
+viewport, MSAA 4x and 0.75 internal rendering scale. Environment-disable exactly
+matches material-disable after a previous AO frame, checking stale-buffer guards.
+A stronger manual AO produces an exact match with/without screen AO, checking
+min rather than multiplication. Diagnostic output verifies AO changes neither
+actual half-opacity main-shadow visibility nor face SDF values. Raw AO sampling
+matches between face/clothes opaque passes and hair's transparent color pass.
+
+Evidence: `character-screen-ao-validation.json`, `e{669,689,694,704}-live-ao-*.png`,
+`.renderdoc-analysis/live-screen-ao-test.log` (`CHARACTER_SCREEN_AO_OK`). Live
+preview enables Environment SSAO after independent legacy/shadow tests complete.
+These checks do not establish parity with the captured game's AO algorithm;
+multiview, TAA/FSR2 and partial transparency remain unvalidated.
+
+## E669 skin
+
+E669 now uses the captured dry-skin material with BC5 normal mapping, LUT/ramp,
+view-dependent rim tint and analytic specular. Its live variant uses the existing
+16-light bridge, full-RID directional/local shadows and independent screen AO.
+Local modes 1/3 gate the complete contribution once; modes 0/4 retain their behavior.
+AO combines by minimum in the existing input; skin has no face SDF.
+See [CAPTURE_E669_SKIN.md](CAPTURE_E669_SKIN.md) for resources, independent HDR
+comparison (1866/1872 exact, all within one encoded step), live coverage and limits.
+The previous material and post-process regression cases remain intact.

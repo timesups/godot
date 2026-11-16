@@ -71,6 +71,10 @@ func run() -> void:
 	clothes_shader.code = FileAccess.get_file_as_string(directory.path_join("clothes_surface.gdshader" if clothes_surface else "clothes.gdshader"))
 	for include in ["character_lighting", "clothes_surface", "clothes_lighting", "face_shadow"]:
 		clothes_shader.code = clothes_shader.code.replace('#include "%s.gdshaderinc"' % include, FileAccess.get_file_as_string(directory.path_join(include + ".gdshaderinc")))
+	var skin_shader := Shader.new()
+	skin_shader.code = FileAccess.get_file_as_string(directory.path_join("skin.gdshader"))
+	for include in ["character_lighting","clothes_surface","clothes_lighting","skin_lighting","face_shadow"]:
+		skin_shader.code = skin_shader.code.replace('#include "%s.gdshaderinc"' % include,FileAccess.get_file_as_string(directory.path_join(include+".gdshaderinc")))
 	var hair_shader := Shader.new()
 	hair_shader.code = FileAccess.get_file_as_string(directory.path_join("hair.gdshader"))
 	for include in ["character_lighting", "hair_lighting", "face_shadow"]:
@@ -102,7 +106,7 @@ func run() -> void:
 			vertices.append(inverse * (v3(vb, offset + 32) - origin))
 			normals.append((placement.basis.inverse() * v3(vb, offset + 48)).normalized())
 			uvs.append(Vector2(vb.decode_float(offset + 16), vb.decode_float(offset + 20)))
-			if event in [694, 704] and not albedo_only:
+			if event in [669, 694, 704] and not albedo_only:
 				var t := placement.basis.inverse() * v3(vb, offset + 64)
 				tangents.append_array([t.x, t.y, t.z, vb.decode_float(offset + 76)])
 		var indices := PackedInt32Array()
@@ -124,6 +128,13 @@ func run() -> void:
 		var base_texture := texture(int(part.base_texture))
 		assert(base_texture != null)
 		material.set_shader_parameter("base_map", base_texture)
+		if event == 669 and not albedo_only:
+			material.shader = skin_shader
+			material.set_shader_parameter("base_map",skin_texture(185721))
+			material.set_shader_parameter("normal_map",skin_texture(185726))
+			material.set_shader_parameter("material_lut",texture(172496))
+			material.set_shader_parameter("ramp_map",texture(186593))
+			material.set_shader_parameter("radial_origin",placement.origin)
 		if event == 674 and not albedo_only:
 			material.set_shader_parameter("material_lut", texture(172496))
 			material.set_shader_parameter("ramp_map", texture(186593))
@@ -199,6 +210,17 @@ func run() -> void:
 					palette[color.to_rgba32() >> 8] = true
 		assert(palette.size() > 8, "Missing texture variation or collapsed UVs: " + instance.name)
 		counts[instance.name] = {"silhouette_pixels": count, "textured_colors": palette.size()}
+		if int(instance.get_meta("capture_event")) == 669 and not albedo_only:
+			for parameter in ["normal_strength","rim_strength","analytic_strength"]:
+				var saved: Variant = original.get_shader_parameter(parameter)
+				original.set_shader_parameter(parameter,0.0)
+				var changed := await snapshot()
+				assert(changed.get_data()!=textured.get_data(),"E669 parameter had no effect: "+parameter)
+				original.set_shader_parameter(parameter,saved)
+			original.set_shader_parameter("screen_shadow_ao",Vector2(1,0))
+			assert((await snapshot()).get_data()!=textured.get_data(),"E669 AO had no effect")
+			original.set_shader_parameter("screen_shadow_ao",Vector2.ONE)
+			counts[instance.name]["lighting_response"] = "BC5 normal, rim tint, analytic specular and AO passed"
 		if int(instance.get_meta("capture_event")) == 694 and not albedo_only and not clothes_surface:
 			for parameter in ["analytic_strength", "reflection_strength"]:
 				original.set_shader_parameter(parameter, 0.0)
@@ -386,6 +408,10 @@ func run() -> void:
 			instance.visible = false
 			if int(instance.get_meta("capture_event")) == 704:
 				hair = instance
+		var ao_test = preload("res://live_character_ao.gd").new()
+		if not clothes_surface and not await ao_test.run_ao(self,instances,camera,environment.environment,evidence):
+			quit(1)
+			return
 		var material_test = preload("res://live_material_shadows.gd").new()
 		if not clothes_surface and not await material_test.run_materials(self,instances,camera,evidence):
 			quit(1)
@@ -396,6 +422,7 @@ func run() -> void:
 			return
 		if not clothes_surface:
 			material_test.bind_scene(instances,live_test.scene_bridge)
+			environment.environment.ssao_enabled = true
 	for instance in instances:
 		instance.visible = true
 	var front := await snapshot()
@@ -407,13 +434,13 @@ func run() -> void:
 	assert(side.save_png(evidence.path_join(prefix + "-three-quarter.png")) == OK)
 	assert(front.get_data() != side.get_data())
 	var report := {"parts": 8, "triangles": total_triangles, "isolated_pixels": counts,
-		"mode": "live_e689_e694_e704_shadows" if live_lights and not albedo_only else "base_color_only" if albedo_only else ("e694_surface_diagnostics" if clothes_surface else "e674_e689_e694_e704_lighting_plus_base_color_diagnostics"),
+		"mode": "live_e669_e689_e694_e704_shadows_ao" if live_lights and not albedo_only else "base_color_only" if albedo_only else ("e694_surface_diagnostics" if clothes_surface else "e669_e674_e689_e694_e704_lighting_plus_base_color_diagnostics"),
 		"status": "passed", "scope": "Posed geometry/UV/texture integration, not full material parity"}
 	FileAccess.open(evidence.path_join(prefix + "-validation.json"), FileAccess.WRITE).store_string(JSON.stringify(report, "\t"))
 	print("FULL_CHARACTER_OK " + JSON.stringify(report))
 	if keep_open:
 		var label := Label.new()
-		label.text = "Captured posed mesh: 8 parts\n" + ("E689/E694/E704 live shadows + Light3D bridge" if live_lights and not albedo_only else "Base-color diagnostics only" if albedo_only else ("E674 + E689 + E704 lighting; E694 surface inspection" if clothes_surface else "E674 + E689 + E694 + E704 lighting; other parts: base color")) + "\nOther material variants are not yet reconstructed"
+		label.text = "Captured posed mesh: 8 parts\n" + ("E669/E689/E694/E704 live shadows + screen AO" if live_lights and not albedo_only else "Base-color diagnostics only" if albedo_only else ("E674 + E689 + E704 lighting; E694 surface inspection" if clothes_surface else "E669 + E674 + E689 + E694 + E704 lighting; other parts: base color")) + "\nOther material variants are not yet reconstructed"
 		label.position = Vector2(12, 12)
 		root.add_child(label)
 	else:
@@ -457,3 +484,11 @@ func hair_texture(id: int) -> ImageTexture:
 		Image.FORMAT_RGBA8 if id in [188148,186747] else Image.FORMAT_BPTC_RGBA,payload)
 	assert(image != null and not image.is_empty())
 	return ImageTexture.create_from_image(image)
+
+func skin_texture(id: int) -> Texture2D:
+	var bytes := FileAccess.get_file_as_bytes(evidence.path_join("e669-texture-%d.dds" % id))
+	var data := bytes.slice(148 if bytes.slice(84,88).get_string_from_ascii()=="DX10" else 128)
+	for mip in range(1,11):
+		var mip_bytes := FileAccess.get_file_as_bytes(evidence.path_join("e669-texture-%d-mip%d.dds" % [id,mip]))
+		data.append_array(mip_bytes.slice(148 if mip_bytes.slice(84,88).get_string_from_ascii()=="DX10" else 128))
+	return ImageTexture.create_from_image(Image.create_from_data(bytes.decode_u32(16),bytes.decode_u32(12),true,Image.FORMAT_BPTC_RGBA if id==185721 else Image.FORMAT_RGTC_RG,data))

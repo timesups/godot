@@ -1,6 +1,6 @@
 extends Node
 
-## Scene bridge for E704/E694 (16 lights) and E689 (8 lights, face_layout).
+## Scene bridge for E669/E694/E704 (16 lights) and E689 (8 lights, face_layout).
 ## E674 remains unsupported.
 ## Each target needs its own ShaderMaterial. This owns main/local light uniforms,
 ## Live variants resolve engine directional/local shadows by RID; physical intensity/baked lights are not mapped.
