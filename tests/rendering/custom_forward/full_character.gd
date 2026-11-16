@@ -131,7 +131,7 @@ func run() -> void:
 		arrays[Mesh.ARRAY_VERTEX] = vertices
 		arrays[Mesh.ARRAY_NORMAL] = normals
 		arrays[Mesh.ARRAY_TEX_UV] = uvs
-		arrays[Mesh.ARRAY_INDEX] = indices
+		arrays[Mesh.ARRAY_INDEX] = preload("res://character_mesh.gd").godot_indices(indices)
 		if not tangents.is_empty():
 			arrays[Mesh.ARRAY_TANGENT] = tangents
 		var mesh := ArrayMesh.new()
@@ -480,6 +480,7 @@ func run() -> void:
 		if not await live_test.run(self,hair,camera,evidence,keep_open):
 			quit(1)
 			return
+		preload("res://character_shadow_preview.gd").configure(camera,live_test.scene_bridge.main_light)
 		if not clothes_surface:
 			material_test.bind_scene(instances,live_test.scene_bridge)
 			environment.environment.ssao_enabled = true

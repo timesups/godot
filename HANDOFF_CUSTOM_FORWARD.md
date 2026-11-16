@@ -1,6 +1,6 @@
 # 交接：Custom Forward 抓帧还原
 
-更新：2026-11-16。工作目录 `E:\ZcxCode\godot`，分支 `4.7_custom_render_pipeline`；引擎验证基线 `9b458e9092`，前置耳朵提交 `bd5e603e20`（当前 HEAD 以 git log 为准）。
+更新：2026-11-16。工作目录 `E:\ZcxCode\godot`，分支 `4.7_custom_render_pipeline`；引擎验证基线 `9b458e9092`，前置级联修复提交 `86da77307e`（当前 HEAD 以 git log 为准）。
 本文件写入前已核对 git status/log/diff、构建日志及本地 GPU 验证报告。
 
 ## 目标与约束
@@ -9,9 +9,9 @@
 用户要求保留原始 Forward+、保留已有回归，允许从本机抓帧提取测试模型/纹理。
 按阶段实现、编译、GPU 验证，不把近似结果称为逐像素一致。
 
-- **保留工作区全部未提交修改和未跟踪源码，不要 reset/clean。** 先前 E669 与实时 AO 修改完整保留，并按新授权形成独立本地提交 `90d1af44ae`；E679 已提交为 `e4d1b1d96b`；E684 已提交为 `4954a9d6c4`；E699 已提交为 `bd5e603e20`；本轮级联阴影修复在验证后独立本地提交，不自动 push。
+- **保留工作区全部未提交修改和未跟踪源码，不要 reset/clean。** 先前 E669 与实时 AO 修改完整保留，并按新授权形成独立本地提交 `90d1af44ae`；E679 已提交为 `e4d1b1d96b`；E684 已提交为 `4954a9d6c4`；E699 已提交为 `bd5e603e20`；级联修复已提交为 `86da77307e`；本轮曲面/薄片阴影修复在验证后独立本地提交，不自动 push。
 - 优先继续使用此工作目录。仅 checkout HEAD 或创建新 worktree 不会带上未提交/未跟踪文件，也不会带上忽略的抓帧素材。
-- 本轮已完成方向光级联边缘/软阴影验证，并修复角色接口采样不存在级联的问题；既有皮肤/脸/衣服/头发及实时 AO 保留并重验；没有待运行的后台构建或需要继续等待的任务。
+- 本轮完成角色曲面/薄片/近接触阴影验证，修复完整角色导入绕序与 live 预览阴影范围配置。原始 Forward+、引擎 shader、独立材质回放与现有回归保留；没有待运行任务。
 - 按 AGENTS.md 在完成验证的节点自动本地提交，无需再次确认；不自动 push。没有必要重新安装 RenderDoc MCP 或重新提取全部资源。
 
 ## 已完成
@@ -117,19 +117,31 @@
 - 高质量、2 单位遮挡距离的 10–90% 半影：PCF 4 像素、2° PCSS 8 像素、5° PCSS 20 像素；0.5 距离的 5° PCSS 为 3 像素。低/高质量半影空间噪声 RMS 0.0597792/0.0226380，静止重复完全一致，half opacity 线性组合通过。
 - 证据 `.renderdoc-analysis/shadow-quality/{character,character-fixed,forward_plus}`；修复前后报告/日志保留。具体约束、阈值和复现命令见 `DIRECTIONAL_SHADOW_QUALITY.md`。本测试固定透视、2048/32-bit atlas、无 MSAA/TAA；不代表动画角色自阴影、多视图、TAA/FSR2 或性能验证。
 
+## 最新完成：角色自阴影 bias / 薄片与近接触遮挡
+
+- 新增 `character_shadow_bias.gd` / `compare_character_shadow_bias.py`，每条管线 193 组：球面、非均匀缩放椭球、双面零厚度薄片、0.002/0.01/0.05 单位间隙、五档 bias、PCF/PCSS、八部件角色和静止重复。
+- **修复完整角色导入绕序**：捕获 post-VS 世界坐标三角形与 Godot clockwise front face 相反；双面材质掩盖了绕序错误，但 FRONT_FACING 翻转外侧法线，使 normal bias 朝内部偏移，脸部产生自阴影条纹。`character_mesh.gd` 在完整角色导入边界交换第二/第三索引，默认/live 预览共用。独立 clip-space 捕获回放的投影、索引及数值回归不变。
+- GPU 朝向检查要求 >95% 可见法线面向相机，修复后 98.84%；旧绕序对照只有 1.16%，明确不通过。真实材质开关主光阴影/转换绕序前后截图确认条纹消除。不能只凭球面通过或与原始 Forward+ 一致判断角色没有 acne。
+- **修复 live 预览范围**：正交相机原 far=4000，directional_shadow_max_distance 对此无效。`character_shadow_preview.gd` 在既有回归完成后应用 far/max distance=6、pancake=2、bias=.05、normal bias=1、2° PCSS、高质量 2048/32-bit atlas。仅适用于当前约两单位角色及固定相机，不是任意场景的引擎默认值。
+- 最终配置球面/椭球受光区可见度 0.996888/0.998390，背光区为 0；1 cm 间隙为 0.000857，5 cm 为 0。薄片正反绕序和静止重复一致。旧 far=4000/default bias 对照即使 5 cm 也完全漏光。
+- **已知限制：2 mm 间隙可见度仍为 0.817231，尚未解决。** 降低 bias 会恢复接触但引入曲面 acne；后续需评估接收面深度修正或独立 contact shadow，不通过重复乘 AO/SDF 掩盖。本轮未改动 SDF、主光阴影与 screen AO 的组合。
+- 193 组双管线诊断、160 组级联/36 组跨边界、默认/live 完整角色和双管线 smoke 全部重跑通过。成功 marker 与无 ERROR 已核对。独立 HDR/后处理回放未在本轮重跑，源码和基线保持不变。
+- 证据 `.renderdoc-analysis/shadow-bias/`，正式报告 `character/validation.json`；日志前缀 `shadow-bias-`，实际材质隔离图 `material-{b,flipped-b}*.png`，旧绕序证据 `legacy/legacy_orientation.png`。复现见 `servers/rendering/renderer_rd/custom_forward/CHARACTER_SHADOW_BIAS.md`。仅脚本/文档变化，无需重编引擎。
+
 ## 下一步（尚未开始）
 
-1. 八个 draw 与受控方向光边缘/软阴影验证已完成。下一步可验证角色自身曲面、薄片和近接触遮挡的 bias/漏光表现；复用现有 fixture，不重复材质提取。
+1. 优先研究剩余 2 mm 接触漏光，以曲面 acne 和接触断言同时约束方案；评估接收面深度修正或独立 contact shadow。保留 193 组诊断和原有 160 组级联测试，不再单纯降低 bias。
 2. 若扩展到运动场景，单独验证 TAA/FSR2、多视图与性能；本轮静止重复和跨 split 相机移动不覆盖这些配置。
 3. 脸部 SDF 与几何自阴影的艺术效果仍可调校；当前使用静态 posed mesh，没有骨骼动画还原。保留全部现有回归。
 
 ## 已验证基线
 
 最新构建：`build-custom-shadow-quality.log`，成功，29.20 秒；重新生成 shader 并链接，修复仅涉及 Custom Forward 角色阴影 helper。运行环境 Windows / Vulkan / RTX 3050。
-最新 live 日志：`.renderdoc-analysis/live-shadow-quality-test.log`，含 `CHARACTER_SCREEN_AO_OK`、`FACE_CLOTHES_ENGINE_SHADOWS_OK`、`CHARACTER_LIVE_OK`、`FULL_CHARACTER_OK`，无 shader/runtime 错误。
+最新 live 日志：`.renderdoc-analysis/shadow-bias-live.log`，含 `CHARACTER_SCREEN_AO_OK`、`FACE_CLOTHES_ENGINE_SHADOWS_OK`、`CHARACTER_LIVE_OK`、`FULL_CHARACTER_OK`，无 shader/runtime 错误。
 
 | 检查 | 最新结果 |
 | --- | --- |
+| 曲面/薄片/bias | 193 组通过；修复绕序/范围；2 mm 漏光仍是限制 |
 | 方向光边缘/软阴影 | 160 组、36 组跨边界比较通过；两级无效级联采样已修复 |
 | E699 HDR | 2522/2522 编码完全一致，MAE/max=0；独立 debug 通过 |
 | E684 HDR | 502/503 编码完全一致，MAE 6.4715871438e-7，唯一差异为一个编码步长；独立 debug 通过 |
@@ -145,9 +157,9 @@
 | 默认完整角色 / live 完整角色 | 均通过 |
 
 最新比较日志：`.renderdoc-analysis/shadow-quality-{ear_replay,accessory_replay,iris_replay,skin_replay,material_replay,face_replay,clothes_surface_replay,clothes_replay,hair_replay}-regression.log` 及 `shadow-quality-post-regression.log`。
-本轮全部重跑，误差维持上表基线。两管线 baseline smoke：`shadow-quality-smoke-{custom_forward,forward_plus}.log`；默认完整角色：`shadow-quality-full-character.log`；live 完整角色：`live-shadow-quality-test.log`；基础色诊断维持前轮 `ear-albedo-character.log`。成功 marker 和无 ERROR 已核对。
+上述独立 HDR 比较为前轮基线，本轮未重跑；其源码与门槛不变。两管线 baseline smoke：`shadow-quality-smoke-{custom_forward,forward_plus}.log`；默认完整角色：`shadow-quality-full-character.log`；live 完整角色：`live-shadow-quality-test.log`；基础色诊断维持前轮 `ear-albedo-character.log`。成功 marker 和无 ERROR 已核对。
 方向光证据另见 `hair-live-validation.json`、`hair-shadow-directional-{visible,blocked}.png`。
-最近独立审查未发现引擎局部阴影的 blocking/should-fix 问题。受控方向光软阴影质量已按上节验证；多视图、角色自阴影质量和大 cluster 性能未验证。
+本轮新日志：`shadow-bias-{character,forward_plus,compare,quality,quality-compare,default,live,smoke-custom_forward,smoke-forward_plus}.log`。静态角色自阴影已覆盖上述场景；动画、多视图和大 cluster 性能未验证。
 
 ## 命令
 
@@ -199,12 +211,13 @@ $evidence = 'E:/ZcxCode/godot/.renderdoc-analysis/endfield-frame37917/gbuffer-ma
 以下路径相对仓库根目录，按需阅读，避免一次加载全部抓帧日志：
 
 - `servers/rendering/renderer_rd/custom_forward/README.md`
-- 同目录 `ENGINE_CHARACTER_SHADOWS.md`、`DIRECTIONAL_SHADOW_QUALITY.md`、`LIVE_CHARACTER.md`、`CAPTURE_E699_EARS.md`、`CAPTURE_E684_ACCESSORIES.md`、`CAPTURE_E679_IRIS.md`、`CAPTURE_E669_SKIN.md`、`CAPTURE_E704_HAIR.md`、`CAPTURE_E694_SURFACE.md`
+- 同目录 `CHARACTER_SHADOW_BIAS.md`、`ENGINE_CHARACTER_SHADOWS.md`、`DIRECTIONAL_SHADOW_QUALITY.md`、`LIVE_CHARACTER.md`、`CAPTURE_E699_EARS.md`、`CAPTURE_E684_ACCESSORIES.md`、`CAPTURE_E679_IRIS.md`、`CAPTURE_E669_SKIN.md`、`CAPTURE_E704_HAIR.md`、`CAPTURE_E694_SURFACE.md`
 - 同目录 `materials/hair.gdshader`、`hair_lighting.gdshaderinc`、`character_light_binding.gd`、`face*.gdshader*`、`clothes*.gdshader*`
 - `servers/rendering/renderer_rd/shaders/custom_forward/character_shadow_inc.glsl`、`scene_custom_forward.glsl`
 - `servers/rendering/renderer_rd/custom_forward/scene_shader_custom_forward.cpp`
 - `servers/rendering/renderer_rd/storage_rd/light_storage.cpp`、`light_storage.h`
 - `servers/rendering/shader_types.cpp`、`scene/3d/light_3d.{h,cpp}`、`doc/classes/Light3D.xml`
+- `tests/rendering/custom_forward/character_mesh.gd`、`character_shadow_preview.gd`、`character_shadow_bias.gd`、`compare_character_shadow_bias.py`
 - `tests/rendering/custom_forward/live_character.gd`、`live_material_shadows.gd`、`live_character_ao.gd`、`full_character.gd`、`prepare_character.py`、各 replay/compare
 
 每个后续里程碑更新此文件，保持它是新对话的单一交接入口。

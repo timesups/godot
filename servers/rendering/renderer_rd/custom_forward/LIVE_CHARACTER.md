@@ -177,3 +177,17 @@ lobes or face SDF. Existing shaders and regression cases are preserved.
 Independent captured HDR validation is exact for all 2522 visible pixels;
 see [capture evidence and commands](CAPTURE_E699_EARS.md). This statement is
 limited to the captured visible subset and active dry material branch.
+
+## Isolated preview shadow range
+
+The final live preview now uses a six-unit camera far plane, a two-unit shadow
+pancake margin and a tested bias/PCSS configuration. The previous orthographic
+far=4000 setup erased character self-shadows. These settings apply only to the
+fixed posed-character preview, after the existing regression tests. See
+[character bias/contact validation](CHARACTER_SHADOW_BIAS.md) for 193-case GPU
+coverage, measurements and the remaining 0.002-unit contact leakage limitation.
+
+Complete-character import also converts captured world-space triangle winding to
+Godot's clockwise front faces. Without this, two-sided materials hid the winding
+error while normal bias pointed inside exterior surfaces, causing face stripes.
+Captured clip-space replay indices and all material shader equations are retained.
