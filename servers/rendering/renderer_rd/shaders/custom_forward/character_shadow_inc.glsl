@@ -248,12 +248,63 @@ float custom_forward_local_shadow(uvec2 light_id, bool is_spot, vec3 vertex, vec
 	return 1.0;
 }
 
+#ifndef SHADOWS_DISABLED
+// A short receiver-plane contact query complements the biased PCF/PCSS result.
+// It never substitutes for distant/soft shadows and does not consume AO.
+float custom_directional_contact(mat4 shadow_matrix, vec3 vertex, vec3 light_dir, float bias, vec3 dx, vec3 dy) {
+	vec3 plane_normal = cross(dx, dy);
+	float normal_length = length(plane_normal);
+	// Keep the explicitly zero-bias path unchanged and avoid unstable grazing planes.
+	if (bias <= 0.0 || normal_length < 1e-12 || abs(dot(plane_normal, light_dir)) < 0.1 * normal_length) {
+		return 1.0;
+	}
+	vec3 x = (shadow_matrix * vec4(dx, 0.0)).xyz;
+	vec3 y = (shadow_matrix * vec4(dy, 0.0)).xyz;
+	float det = x.x * y.y - x.y * y.x;
+	if (abs(det) < 1e-12) { return 1.0; }
+	vec2 gradient = vec2(x.z * y.y - y.z * x.y, y.z * x.x - x.z * y.x) / det;
+	ivec2 size = textureSize(sampler2D(directional_shadow_atlas, SAMPLER_LINEAR_CLAMP), 0);
+	// Limit the extra occlusion to eight texels along the receiver normal. Fade the
+	// outer half so camera/cascade resolution changes do not make a hard cutoff.
+	float xy_scale = length(vec3(shadow_matrix[0].x, shadow_matrix[1].x, shadow_matrix[2].x));
+	float z_scale = length(vec3(shadow_matrix[0].z, shadow_matrix[1].z, shadow_matrix[2].z));
+	float texel_world_size = 1.0 / (float(size.x) * xy_scale);
+	float reach = 8.0 * texel_world_size * z_scale / (abs(dot(plane_normal, light_dir)) / normal_length);
+	// Plane-corrected point comparisons need only a small rasterization margin;
+	// using the broad PCF depth bias here would erase the contact again.
+	float contact_bias = min(bias, texel_world_size * 0.25);
+	vec3 coord = (shadow_matrix * vec4(vertex + light_dir * contact_bias, 1.0)).xyz;
+	vec2 texel = coord.xy * vec2(size) - 0.5;
+	ivec2 base = ivec2(floor(texel));
+	// Require a coherent blocker over the footprint; isolated neighboring
+	// surface samples must not turn into contact acne on detailed geometry.
+	float occlusion = 1.0;
+	for (int y_index = 0; y_index < 2; y_index++) {
+		for (int x_index = 0; x_index < 2; x_index++) {
+			ivec2 pixel = base + ivec2(x_index, y_index);
+			if (any(lessThan(pixel, ivec2(0))) || any(greaterThanEqual(pixel, size))) { return 1.0; }
+			vec2 center = (vec2(pixel) + 0.5) / vec2(size);
+			float receiver = coord.z + dot(center - coord.xy, gradient);
+			float stored = texelFetch(sampler2D(directional_shadow_atlas, SAMPLER_LINEAR_CLAMP), pixel, 0).r;
+			float separation = stored - receiver;
+			float blocked = separation > 0.0 && stored > 0.0 ? 1.0 - smoothstep(reach * 0.5, reach, separation) : 0.0;
+			occlusion = min(occlusion, blocked);
+		}
+	}
+	return 1.0 - occlusion * smoothstep(0.1, 0.2, abs(dot(plane_normal, light_dir)) / normal_length);
+}
+
+#endif
+
 // Mirrors the dynamic directional shadow path; baked shadow masks are not part
 // of the character bridge. Keep cascade filtering in sync with the scene shader.
 float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 	float shadow = 1.0;
 #ifndef SHADOWS_DISABLED
 	if (directional_lights.data[i].shadow_opacity > 0.001) {
+		vec3 receiver_dx = dFdx(vertex);
+		vec3 receiver_dy = dFdy(vertex);
+		float contact_shadow = 1.0;
 		float depth_z = -vertex.z;
 		// Unused splits repeat the last distance, but their matrices/atlas regions
 		// are not valid. Never blend into them (notably two-split PCSS).
@@ -281,6 +332,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				CUSTOM_DIRECTIONAL_BIAS(v, 0)
 
 				vec4 pssm_coord = (directional_lights.data[i].shadow_matrix1 * v);
+				contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix1, vertex, light_dir, directional_lights.data[i].shadow_bias[0], receiver_dx, receiver_dy);
 				pssm_coord /= pssm_coord.w;
 
 				float range_pos = dot(directional_lights.data[i].direction, v.xyz);
@@ -288,6 +340,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				float test_radius = (range_pos - range_begin) * directional_lights.data[i].softshadow_angle;
 				vec2 tex_scale = directional_lights.data[i].uv_scale1 * test_radius;
 				shadow = sample_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count);
+				shadow = min(shadow, contact_shadow);
 				blend_count++;
 			}
 
@@ -297,6 +350,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				CUSTOM_DIRECTIONAL_BIAS(v, 1)
 
 				vec4 pssm_coord = (directional_lights.data[i].shadow_matrix2 * v);
+				contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix2, vertex, light_dir, directional_lights.data[i].shadow_bias[1], receiver_dx, receiver_dy);
 				pssm_coord /= pssm_coord.w;
 
 				float range_pos = dot(directional_lights.data[i].direction, v.xyz);
@@ -304,6 +358,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				float test_radius = (range_pos - range_begin) * directional_lights.data[i].softshadow_angle;
 				vec2 tex_scale = directional_lights.data[i].uv_scale2 * test_radius;
 				float s = sample_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count);
+				s = min(s, contact_shadow);
 
 				if (blend_count == 0) {
 					shadow = s;
@@ -322,6 +377,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				CUSTOM_DIRECTIONAL_BIAS(v, 2)
 
 				vec4 pssm_coord = (directional_lights.data[i].shadow_matrix3 * v);
+				contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix3, vertex, light_dir, directional_lights.data[i].shadow_bias[2], receiver_dx, receiver_dy);
 				pssm_coord /= pssm_coord.w;
 
 				float range_pos = dot(directional_lights.data[i].direction, v.xyz);
@@ -329,6 +385,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				float test_radius = (range_pos - range_begin) * directional_lights.data[i].softshadow_angle;
 				vec2 tex_scale = directional_lights.data[i].uv_scale3 * test_radius;
 				float s = sample_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count);
+				s = min(s, contact_shadow);
 
 				if (blend_count == 0) {
 					shadow = s;
@@ -347,6 +404,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				CUSTOM_DIRECTIONAL_BIAS(v, 3)
 
 				vec4 pssm_coord = (directional_lights.data[i].shadow_matrix4 * v);
+				contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix4, vertex, light_dir, directional_lights.data[i].shadow_bias[3], receiver_dx, receiver_dy);
 				pssm_coord /= pssm_coord.w;
 
 				float range_pos = dot(directional_lights.data[i].direction, v.xyz);
@@ -354,6 +412,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				float test_radius = (range_pos - range_begin) * directional_lights.data[i].softshadow_angle;
 				vec2 tex_scale = directional_lights.data[i].uv_scale4 * test_radius;
 				float s = sample_directional_soft_shadow(directional_shadow_atlas, pssm_coord.xyz, tex_scale * directional_lights.data[i].soft_shadow_scale, scene_data_block.data.taa_frame_count);
+				s = min(s, contact_shadow);
 
 				if (blend_count == 0) {
 					shadow = s;
@@ -375,6 +434,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				CUSTOM_DIRECTIONAL_BIAS(v, 0)
 
 				pssm_coord = (directional_lights.data[i].shadow_matrix1 * v);
+				contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix1, vertex, light_dir, directional_lights.data[i].shadow_bias[0], receiver_dx, receiver_dy);
 				blur_factor = 1.0;
 			} else if (depth_z < directional_lights.data[i].shadow_split_offsets.y) {
 				vec4 v = vec4(vertex, 1.0);
@@ -382,6 +442,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				CUSTOM_DIRECTIONAL_BIAS(v, 1)
 
 				pssm_coord = (directional_lights.data[i].shadow_matrix2 * v);
+				contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix2, vertex, light_dir, directional_lights.data[i].shadow_bias[1], receiver_dx, receiver_dy);
 				// Adjust shadow blur with reference to the first split to reduce discrepancy between shadow splits.
 				blur_factor = directional_lights.data[i].shadow_split_offsets.x / directional_lights.data[i].shadow_split_offsets.y;
 			} else if (depth_z < directional_lights.data[i].shadow_split_offsets.z) {
@@ -390,6 +451,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				CUSTOM_DIRECTIONAL_BIAS(v, 2)
 
 				pssm_coord = (directional_lights.data[i].shadow_matrix3 * v);
+				contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix3, vertex, light_dir, directional_lights.data[i].shadow_bias[2], receiver_dx, receiver_dy);
 				// Adjust shadow blur with reference to the first split to reduce discrepancy between shadow splits.
 				blur_factor = directional_lights.data[i].shadow_split_offsets.x / directional_lights.data[i].shadow_split_offsets.z;
 			} else {
@@ -398,6 +460,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				CUSTOM_DIRECTIONAL_BIAS(v, 3)
 
 				pssm_coord = (directional_lights.data[i].shadow_matrix4 * v);
+				contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix4, vertex, light_dir, directional_lights.data[i].shadow_bias[3], receiver_dx, receiver_dy);
 				// Adjust shadow blur with reference to the first split to reduce discrepancy between shadow splits.
 				blur_factor = directional_lights.data[i].shadow_split_offsets.x / directional_lights.data[i].shadow_split_offsets.w;
 			}
@@ -405,6 +468,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 			pssm_coord /= pssm_coord.w;
 
 			shadow = sample_directional_pcf_shadow(directional_shadow_atlas, scene_data_block.data.directional_shadow_pixel_size * directional_lights.data[i].soft_shadow_scale * (blur_factor + (1.0 - blur_factor) * float(directional_lights.data[i].blend_splits)), pssm_coord, scene_data_block.data.taa_frame_count);
+			shadow = min(shadow, contact_shadow);
 
 			if (directional_lights.data[i].blend_splits) {
 				float pssm_blend;
@@ -414,6 +478,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 					vec4 v = vec4(vertex, 1.0);
 					CUSTOM_DIRECTIONAL_BIAS(v, 1)
 					pssm_coord = (directional_lights.data[i].shadow_matrix2 * v);
+					contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix2, vertex, light_dir, directional_lights.data[i].shadow_bias[1], receiver_dx, receiver_dy);
 					pssm_blend = smoothstep(directional_lights.data[i].shadow_split_offsets.x - directional_lights.data[i].shadow_split_offsets.x * 0.1, directional_lights.data[i].shadow_split_offsets.x, depth_z);
 					// Adjust shadow blur with reference to the first split to reduce discrepancy between shadow splits.
 					blur_factor2 = directional_lights.data[i].shadow_split_offsets.x / directional_lights.data[i].shadow_split_offsets.y;
@@ -421,6 +486,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 					vec4 v = vec4(vertex, 1.0);
 					CUSTOM_DIRECTIONAL_BIAS(v, 2)
 					pssm_coord = (directional_lights.data[i].shadow_matrix3 * v);
+					contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix3, vertex, light_dir, directional_lights.data[i].shadow_bias[2], receiver_dx, receiver_dy);
 					pssm_blend = smoothstep(directional_lights.data[i].shadow_split_offsets.y - directional_lights.data[i].shadow_split_offsets.y * 0.1, directional_lights.data[i].shadow_split_offsets.y, depth_z);
 					// Adjust shadow blur with reference to the first split to reduce discrepancy between shadow splits.
 					blur_factor2 = directional_lights.data[i].shadow_split_offsets.x / directional_lights.data[i].shadow_split_offsets.z;
@@ -428,6 +494,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 					vec4 v = vec4(vertex, 1.0);
 					CUSTOM_DIRECTIONAL_BIAS(v, 3)
 					pssm_coord = (directional_lights.data[i].shadow_matrix4 * v);
+					contact_shadow = custom_directional_contact(directional_lights.data[i].shadow_matrix4, vertex, light_dir, directional_lights.data[i].shadow_bias[3], receiver_dx, receiver_dy);
 					pssm_blend = smoothstep(directional_lights.data[i].shadow_split_offsets.z - directional_lights.data[i].shadow_split_offsets.z * 0.1, directional_lights.data[i].shadow_split_offsets.z, depth_z);
 					// Adjust shadow blur with reference to the first split to reduce discrepancy between shadow splits.
 					blur_factor2 = directional_lights.data[i].shadow_split_offsets.x / directional_lights.data[i].shadow_split_offsets.w;
@@ -439,6 +506,7 @@ float custom_directional_shadow(uint i, vec3 vertex, vec3 geo_normal) {
 				pssm_coord /= pssm_coord.w;
 
 				float shadow2 = sample_directional_pcf_shadow(directional_shadow_atlas, scene_data_block.data.directional_shadow_pixel_size * directional_lights.data[i].soft_shadow_scale * (blur_factor2 + (1.0 - blur_factor2) * float(directional_lights.data[i].blend_splits)), pssm_coord, scene_data_block.data.taa_frame_count);
+				shadow2 = min(shadow2, contact_shadow);
 				shadow = mix(shadow, shadow2, pssm_blend);
 			}
 		}

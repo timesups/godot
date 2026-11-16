@@ -4,6 +4,7 @@ extends SceneTree
 var output := ""
 var evidence := ""
 var reference := false
+var contact := false
 var camera: Camera3D
 var sun: DirectionalLight3D
 var material: ShaderMaterial
@@ -58,6 +59,7 @@ func load_character() -> void:
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 		var instance := MeshInstance3D.new()
 		instance.mesh=mesh
+		instance.set_meta("capture_event",int(part.event))
 		instance.material_override=material
 		instance.visible=false
 		root.add_child(instance)
@@ -68,6 +70,7 @@ func run() -> void:
 		if arg.begins_with("--output="): output=arg.trim_prefix("--output=")
 		if arg.begins_with("--evidence="): evidence=arg.trim_prefix("--evidence=")
 		if arg=="--reference": reference=true
+		if arg=="--contact": contact=true
 	var expected_renderer := "forward_plus" if reference else "custom_forward"
 	if output.is_empty() or not FileAccess.file_exists(evidence.path_join("character-manifest.json")) or RenderingServer.get_current_rendering_method()!=expected_renderer:
 		push_error("Specify --output, --evidence and a supported renderer")
@@ -226,6 +229,45 @@ func run() -> void:
 	await sample_case("preview_stable","preview_character")
 	material.set_shader_parameter("orientation",true)
 	await sample_case("preview_orientation","preview_character")
+	if contact:
+		material.set_shader_parameter("orientation",false)
+		for part in character_parts: part.hide()
+		camera.position=Vector3(0,0,3)
+		camera.rotation=Vector3.ZERO
+		receiver.show()
+		receiver.mesh=quad
+		blocker.rotation=Vector3.ZERO
+		for yaw in [0,30,60,75]:
+			sun.rotation_degrees=Vector3(0,yaw,0)
+			material.set_shader_parameter("light_direction",sun.global_basis.z)
+			for angle in [0.0,2.0]:
+				sun.light_angular_distance=angle
+				blocker.hide()
+				receiver.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+				await sample_case("contact_y%d_a%d_clear" % [yaw,int(angle)],"contact_clear")
+				receiver.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				blocker.show()
+				for gap in [0.002,0.004,0.008,0.016,0.032]:
+					blocker.position=Vector3(tan(deg_to_rad(float(yaw)))*gap,0,gap)
+					await sample_case("contact_y%d_a%d_g%.3f" % [yaw,int(angle),gap],"contact_sheet",gap)
+		# Straddle the near-grazing fallback; contact must fade rather than pop.
+		sun.light_angular_distance=2.0
+		for yaw in [83.9,84.1,84.2,84.3,84.4,84.6]:
+			sun.rotation_degrees=Vector3(0,yaw,0)
+			material.set_shader_parameter("light_direction",sun.global_basis.z)
+			blocker.position=Vector3(tan(deg_to_rad(yaw))*0.002,0,0.002)
+			await sample_case("contact_grazing_y%.1f" % yaw,"contact_grazing",0.002)
+		# Isolate the captured face under the actual preview light direction.
+		# Aggregate whole-character coverage cannot detect cheek contact acne.
+		receiver.hide()
+		blocker.hide()
+		for part in character_parts: part.visible=int(part.get_meta("capture_event"))==689
+		sun.rotation_degrees=Vector3(-25,-35,0)
+		material.set_shader_parameter("light_direction",sun.global_basis.z)
+		for side in [false,true]:
+			camera.position=bounds.get_center()+(Vector3(2,0.3,2) if side else Vector3(0,0,3))
+			camera.look_at(bounds.get_center())
+			await sample_case("contact_face_side%d" % int(side),"contact_face")
 	FileAccess.open(output.path_join("cases.json"),FileAccess.WRITE).store_string(JSON.stringify(records,"\t"))
 	print("CHARACTER_SHADOW_BIAS_CAPTURE_OK cases=%d reference=%s" % [records.size(),reference])
 	quit(0)

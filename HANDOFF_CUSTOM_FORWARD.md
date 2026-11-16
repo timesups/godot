@@ -1,25 +1,25 @@
 # 交接：Custom Forward 抓帧还原
 
-更新：2026-11-16。工作目录 `E:\ZcxCode\godot`，分支 `4.7_custom_render_pipeline`；引擎验证基线 `9b458e9092`，最新实现提交 `52872eadfb`，前置级联修复 `86da77307e`（本次交接文档提交另计，当前 HEAD 以 git log 为准）。
+更新：2026-11-16。工作目录 `E:\ZcxCode\godot`，分支 `4.7_custom_render_pipeline`；前轮实现 `52872eadfb`、交接基线 `e6f1305834`，前置级联修复 `86da77307e`；本轮接收面近接触修复的提交号以 git log 为准。
 本文件写入前已核对 git status/log/diff、构建日志及本地 GPU 验证报告。
 
 ## 新会话先读：当前状态摘要
 
 - **目标**：继续完善独立 Custom Forward 的角色实时阴影质量，保留原始 Forward+ 和全部已有回归。
-- **已完成**：八个 draw 的当前捕获材质分支、实时灯光/引擎阴影、适用材质的 screen AO；级联无效采样修复；完整角色绕序与预览阴影范围修复。不要重新初始化项目、重复提取素材或重新做已完成的材质接入。
-- **最近里程碑**：`52872eadfb`。交接开始时工作区干净；没有后台任务待继续。最新 GPU 结果为 193 组 bias/薄片/角色、160 组级联/36 组跨界、默认/live 完整角色、双管线 smoke 全部通过。独立 HDR 回放沿用前轮基线，本轮未重跑。
-- **尚未解决**：0.002 单位间隙（按米制为 2 mm）仍漏光，线性可见度 0.817231；1 cm 为 0.000857，5 cm 为 0。当前通过测试不表示 2 mm 问题已解决。
-- **建议下一步，尚未实施**：复用现有诊断，研究接收面深度修正或独立 contact shadow。必须同时检查曲面 acne、薄片双面性、级联边缘和实际角色；不能只降低 bias，也不能重复乘 AO/脸部 SDF 掩盖漏光。
-- **授权**：按根目录 AGENTS.md，在验证通过的适当节点自动本地提交，无需再次确认；不自动 push。早期“不自动提交”的要求已被用户后续授权替代。
-- **本地依赖**：继续使用此目录及忽略的 `.renderdoc-analysis` 素材；新 worktree 不自带这些资源。最近修改只有脚本/文档，无需为此重新编译引擎。
+- **本轮解决**：原 2 mm 间隙可见度从 0.817231 降至 0；1 cm/5 cm 也为 0，球面/椭球指标不变。仅修改 Custom Forward 角色方向光 helper，补充短程接收面查询；AO/SDF、原 PCF/PCSS、原始 Forward+ 保留。
+- **验证**：249 组 bias/薄片/角色/入射角/脸部、160 组级联/36 组跨界、默认/live 完整角色及双管线 smoke 通过；旧 193 组基线比较仍通过。真实材质脸部斑点实验已被拒绝并修正，最终隔离图/live 图已目检。独立 HDR 回放沿用前轮基线，本轮未重跑。
+- **剩余问题**：新增无遮挡斜面测试暴露原有 PCSS acne，60°/75° 可见度约 .973/.810，原始 Forward+ 同样存在；本修复不加重，尚未解决。保守查询可能错过亚纹素薄遮挡物及轮廓接触边缘，不代表任意场景的接触阴影精度。
+- **下一步**：优先研究上述斜面 PCSS acne，再扩展 atlas/相机尺度、动画、TAA/FSR2、多视图及性能验证。保留本轮 249 组检查及原级联门槛，不重复材质接入、模型提取或前轮绕序修复。
+- **工作区/构建**：开始时干净，基线 HEAD `e6f1305834`；本轮提交以 git log 为准。GLSL 已重新编译，日志 `build-contact-coherent.log`。继续使用此目录与忽略素材；不要覆盖 `.renderdoc-analysis/shadow-bias/character` 修复前基线。
+- **授权**：按 AGENTS.md，在验证通过的适当节点自动本地提交；不 push。
 
 ### 为什么保留原始 Forward+
 
-用于同场景对照、定位自定义管线回归、保留普通渲染路径与回退能力，并减少同步上游时的混淆。它不是绝对正确的视觉标准：此前无效级联采样缺陷也存在于原始 Forward+。必须同时保留独立的遮挡/连续性/朝向断言，而非只要求两条管线相同。本次绕序和预览范围问题在两条管线都可复现，根因在 fixture，未修改引擎算法。
+用于同场景对照、定位自定义管线回归、保留普通渲染路径与回退能力，并减少同步上游时的混淆。它不是绝对正确的视觉标准：此前无效级联采样缺陷也存在于原始 Forward+。必须同时保留独立的遮挡/连续性/朝向断言，而非只要求两条管线相同。前轮绕序和预览范围问题在两条管线都可复现，根因在 fixture；本轮接触修复只改 Custom Forward 角色 helper。
 
 ### 可直接粘贴到新会话
 
-> 请先阅读 E:\ZcxCode\godot\HANDOFF_CUSTOM_FORWARD.md 和 AGENTS.md，核对当前工作区，简述目标与下一步。接着继续研究剩余 2 mm 近接触阴影漏光，同时约束曲面 acne、薄片和级联质量；复用现有诊断及本地素材，不重复已完成工作。保留原始 Forward+、所有未提交修改和现有回归，主光阴影、脸部 SDF 与 screen AO 分开计算。完成后验证、更新同一交接文档，并在合适节点自动本地提交，不要 push。
+> 请先阅读 E:\ZcxCode\godot\HANDOFF_CUSTOM_FORWARD.md 和 AGENTS.md，核对工作区，简述目标与下一步。原 2 mm 近接触漏光已在 249 组诊断中解决；请继续研究新增斜面测试暴露的既有 PCSS acne，保留近接触修复及曲面/脸部/薄片/级联断言。复用本地素材与修复前基线，保留原始 Forward+ 和全部未提交修改，主光阴影、脸部 SDF 与 screen AO 分开。完成后验证、更新同一交接文档，并在合适节点自动本地提交，不要 push。
 
 ## 目标与约束
 
@@ -29,7 +29,7 @@
 
 - **保留工作区全部未提交修改和未跟踪源码，不要 reset/clean。** 先前 E669 与实时 AO 修改完整保留，并按新授权形成独立本地提交 `90d1af44ae`；E679 已提交为 `e4d1b1d96b`；E684 已提交为 `4954a9d6c4`；E699 已提交为 `bd5e603e20`；级联修复已提交为 `86da77307e`；曲面/薄片阴影修复已提交为 `52872eadfb`，均为本地提交，未 push。
 - 优先继续使用此工作目录。仅 checkout HEAD 或创建新 worktree 不会带上未提交/未跟踪文件，也不会带上忽略的抓帧素材。
-- 本轮完成角色曲面/薄片/近接触阴影验证，修复完整角色导入绕序与 live 预览阴影范围配置。原始 Forward+、引擎 shader、独立材质回放与现有回归保留；没有待运行任务。
+- 前轮绕序与预览范围修复保留；本轮仅为 Custom Forward 角色方向光增加接收面近接触查询，原始 Forward+、独立材质回放及现有回归保留。
 - 按 AGENTS.md 在完成验证的节点自动本地提交，无需再次确认；不自动 push。没有必要重新安装 RenderDoc MCP 或重新提取全部资源。
 
 ## 已完成
@@ -135,31 +135,43 @@
 - 高质量、2 单位遮挡距离的 10–90% 半影：PCF 4 像素、2° PCSS 8 像素、5° PCSS 20 像素；0.5 距离的 5° PCSS 为 3 像素。低/高质量半影空间噪声 RMS 0.0597792/0.0226380，静止重复完全一致，half opacity 线性组合通过。
 - 证据 `.renderdoc-analysis/shadow-quality/{character,character-fixed,forward_plus}`；修复前后报告/日志保留。具体约束、阈值和复现命令见 `DIRECTIONAL_SHADOW_QUALITY.md`。本测试固定透视、2048/32-bit atlas、无 MSAA/TAA；不代表动画角色自阴影、多视图、TAA/FSR2 或性能验证。
 
-## 最新完成：角色自阴影 bias / 薄片与近接触遮挡
+## 前轮基线：角色自阴影 bias / 薄片与近接触遮挡
 
 - 新增 `character_shadow_bias.gd` / `compare_character_shadow_bias.py`，每条管线 193 组：球面、非均匀缩放椭球、双面零厚度薄片、0.002/0.01/0.05 单位间隙、五档 bias、PCF/PCSS、八部件角色和静止重复。
 - **修复完整角色导入绕序**：捕获 post-VS 世界坐标三角形与 Godot clockwise front face 相反；双面材质掩盖了绕序错误，但 FRONT_FACING 翻转外侧法线，使 normal bias 朝内部偏移，脸部产生自阴影条纹。`character_mesh.gd` 在完整角色导入边界交换第二/第三索引，默认/live 预览共用。独立 clip-space 捕获回放的投影、索引及数值回归不变。
 - GPU 朝向检查要求 >95% 可见法线面向相机，修复后 98.84%；旧绕序对照只有 1.16%，明确不通过。真实材质开关主光阴影/转换绕序前后截图确认条纹消除。不能只凭球面通过或与原始 Forward+ 一致判断角色没有 acne。
 - **修复 live 预览范围**：正交相机原 far=4000，directional_shadow_max_distance 对此无效。`character_shadow_preview.gd` 在既有回归完成后应用 far/max distance=6、pancake=2、bias=.05、normal bias=1、2° PCSS、高质量 2048/32-bit atlas。仅适用于当前约两单位角色及固定相机，不是任意场景的引擎默认值。
 - 最终配置球面/椭球受光区可见度 0.996888/0.998390，背光区为 0；1 cm 间隙为 0.000857，5 cm 为 0。薄片正反绕序和静止重复一致。旧 far=4000/default bias 对照即使 5 cm 也完全漏光。
-- **已知限制：2 mm 间隙可见度仍为 0.817231，尚未解决。** 降低 bias 会恢复接触但引入曲面 acne；后续需评估接收面深度修正或独立 contact shadow，不通过重复乘 AO/SDF 掩盖。本轮未改动 SDF、主光阴影与 screen AO 的组合。
+- **前轮限制（已由下述本轮修复解决）：2 mm 间隙可见度为 0.817231。** 降低 bias 会恢复接触但引入曲面 acne；后续需评估接收面深度修正或独立 contact shadow，不通过重复乘 AO/SDF 掩盖。本轮未改动 SDF、主光阴影与 screen AO 的组合。
 - 193 组双管线诊断、160 组级联/36 组跨边界、默认/live 完整角色和双管线 smoke 全部重跑通过。成功 marker 与无 ERROR 已核对。独立 HDR/后处理回放未在本轮重跑，源码和基线保持不变。
 - 证据 `.renderdoc-analysis/shadow-bias/`，正式报告 `character/validation.json`；日志前缀 `shadow-bias-`，实际材质隔离图 `material-{b,flipped-b}*.png`，旧绕序证据 `legacy/legacy_orientation.png`。复现见 `servers/rendering/renderer_rd/custom_forward/CHARACTER_SHADOW_BIAS.md`。仅脚本/文档变化，无需重编引擎。
 
+## 最新完成：接收面近接触遮挡
+
+- 只修改 `custom_forward/character_shadow_inc.glsl`：保留原 PCF/PCSS，补充几何接收面上的四纹素深度查询，要求四个纹素都支持遮挡，再与原阴影取 min。各级联合并后统一混合、距离淡出与 opacity，不重复乘阴影/AO/SDF。不依赖屏幕深度，shadows-only 薄片也参与。
+- 补充容差为 min(原 depth bias, 0.25 纹素)，原过滤 bias 不变；作用距离为沿接收面法线的八个阴影纹素，外半段淡出。零 bias/退化导数回退，|N.L| 从 .2 到 .1 平滑关闭。仅支持方向光，属于有限范围近似。
+- 249 组双管线捕获/比较通过：原 193 组保留，新增 40 组间隙、8 组无遮挡自投影平面、6 组掠射角连续性、2 组独立脸部。新比较模式要求旧 Custom Forward 基线对 Forward+ 的原误差门槛，并检查补充查询不提亮、不增加曲面 acne、2 mm 遮挡、双面性及静止一致性；旧模式仍通过。过大 bias/far=4000 的负例继续在修复前基线上断言。
+- 原预览 2 mm/1 cm/5 cm 全为 0；球面 .996888/0，椭球 .998390/0。40 个新增间隙最大可见度 <.000035；角色正面/侧面遮挡覆盖 29.36%/11.12%，朝向 98.84%；独立脸部受光区相对原始管线平均损失 .003908/.003784，低于 .01 门槛。
+- 被拒绝的实验：只修 normal bias 位移增加曲面 acne；全量替换过滤改变远处 PCSS 半影；双线性接收面查询在真实脸部产生斑点。最终采用四纹素一致遮挡，真实材质隔离图与最终 live 三分之四图已目检。不要恢复这些实验版本。
+- 独立复查提出的掠射角硬切换已改平滑淡出，并补充阈值两侧测试；距离注释已修正。83.9–84.6° 相邻测试最大平均变化 .0271，小于 .05 门槛；不代表极掠射接触精度。
+- 未修改的级联比较仍通过 160 组/36 组跨界，未放宽其门槛；默认/live 完整角色、实时材质阴影/AO 独立性及双管线 smoke 通过。独立 HDR/后处理回放本轮未重跑。
+- **剩余限制**：无遮挡 PCSS 斜面 60°/75° 可见度 .972686/.809968，Forward+ 为 .971231/.808106，属于原过滤已有 acne；补充查询未加重。保守条件会错过亚纹素薄遮挡物及接触边缘。其他 atlas、动画、TAA/FSR2、多视图与性能未验证；每个查询级联增加最多四次点采样。
+- 证据：`.renderdoc-analysis/contact-coherent/validation.json`、`contact-coherent-reference/`、`contact-verified-quality/validation.json`；日志 `contact-coherent{-reference,-compare}.log`、`contact-legacy-compare.log`、`contact-verified-{quality,quality-compare,default,live,smoke-custom_forward,smoke-forward_plus}.log`。真实材质隔离为 `contact-real-coherent.log` / `contact-real-b*.png`。命令见 `CHARACTER_SHADOW_BIAS.md` 的接收面章节，保留旧 `shadow-bias/character` 基线。
+
 ## 下一步（尚未开始）
 
-1. 优先研究剩余 2 mm 接触漏光，以曲面 acne 和接触断言同时约束方案；评估接收面深度修正或独立 contact shadow。保留 193 组诊断和原有 160 组级联测试，不再单纯降低 bias。
-2. 若扩展到运动场景，单独验证 TAA/FSR2、多视图与性能；本轮静止重复和跨 split 相机移动不覆盖这些配置。
-3. 脸部 SDF 与几何自阴影的艺术效果仍可调校；当前使用静态 posed mesh，没有骨骼动画还原。保留全部现有回归。
+1. 研究上述斜面 PCSS acne，保留本轮 249 组和原级联门槛；不能放宽曲面/脸部检查换取接触效果。
+2. 扩展 atlas/相机尺度和动态场景，单独验证 TAA/FSR2、多视图与性能；静止重复、跨 split 移动和掠射角测试不能替代这些检查。
+3. 脸部 SDF 的艺术效果仍可调校；当前使用静态 posed mesh，没有骨骼动画还原。主光阴影、AO/SDF 保持独立。
 
 ## 已验证基线
 
-最新构建：`build-custom-shadow-quality.log`，成功，29.20 秒；重新生成 shader 并链接，修复仅涉及 Custom Forward 角色阴影 helper。运行环境 Windows / Vulkan / RTX 3050。
-最新 live 日志：`.renderdoc-analysis/shadow-bias-live.log`，含 `CHARACTER_SCREEN_AO_OK`、`FACE_CLOTHES_ENGINE_SHADOWS_OK`、`CHARACTER_LIVE_OK`、`FULL_CHARACTER_OK`，无 shader/runtime 错误。
+最新构建：`.renderdoc-analysis/build-contact-coherent.log`，成功，35.23 秒；重新生成 shader 并链接，修复仅涉及 Custom Forward 角色阴影 helper。运行环境 Windows / Vulkan / RTX 3050。
+最新 live 日志：`.renderdoc-analysis/contact-verified-live.log`，含 `CHARACTER_SCREEN_AO_OK`、`FACE_CLOTHES_ENGINE_SHADOWS_OK`、`CHARACTER_LIVE_OK`、`FULL_CHARACTER_OK`，无 shader/runtime 错误。
 
 | 检查 | 最新结果 |
 | --- | --- |
-| 曲面/薄片/bias | 193 组通过；修复绕序/范围；2 mm 漏光仍是限制 |
+| 曲面/薄片/bias/contact | 249 组通过；2 mm 可见度为 0；曲面/脸部/掠射角检查通过；旧 193 组基线检查保留 |
 | 方向光边缘/软阴影 | 160 组、36 组跨边界比较通过；两级无效级联采样已修复 |
 | E699 HDR | 2522/2522 编码完全一致，MAE/max=0；独立 debug 通过 |
 | E684 HDR | 502/503 编码完全一致，MAE 6.4715871438e-7，唯一差异为一个编码步长；独立 debug 通过 |
@@ -177,7 +189,7 @@
 最新比较日志：`.renderdoc-analysis/shadow-quality-{ear_replay,accessory_replay,iris_replay,skin_replay,material_replay,face_replay,clothes_surface_replay,clothes_replay,hair_replay}-regression.log` 及 `shadow-quality-post-regression.log`。
 上述独立 HDR 比较为前轮基线，本轮未重跑；其源码与门槛不变。两管线 baseline smoke：`shadow-quality-smoke-{custom_forward,forward_plus}.log`；默认完整角色：`shadow-quality-full-character.log`；live 完整角色：`live-shadow-quality-test.log`；基础色诊断维持前轮 `ear-albedo-character.log`。成功 marker 和无 ERROR 已核对。
 方向光证据另见 `hair-live-validation.json`、`hair-shadow-directional-{visible,blocked}.png`。
-本轮新日志：`shadow-bias-{character,forward_plus,compare,quality,quality-compare,default,live,smoke-custom_forward,smoke-forward_plus}.log`。静态角色自阴影已覆盖上述场景；动画、多视图和大 cluster 性能未验证。
+前轮日志：`shadow-bias-{character,forward_plus,compare,quality,quality-compare,default,live,smoke-custom_forward,smoke-forward_plus}.log`。静态角色自阴影已覆盖上述场景；动画、多视图和大 cluster 性能未验证。
 
 ## 命令
 
