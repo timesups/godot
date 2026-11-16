@@ -412,3 +412,17 @@ behavior and captured mode 3 stays zero. Unlike the four AO-enabled materials,
 this captured iris specialization ignores screen AO and has no face SDF.
 Default/live fixtures verify parallax, curvature, MatCap and AO independence;
 existing shadow tests now also cover iris without removing previous cases.
+
+## E684 accessories
+
+The full character now uses a dedicated accessory material with shared BC5 normal,
+metallic/F0/AO/smoothness textures, ramp, analytic specular and environment reflection.
+It has neither clothing's specular lookup nor emission. See
+[CAPTURE_E684_ACCESSORIES.md](CAPTURE_E684_ACCESSORIES.md) for source evidence and
+independent captured HDR comparison (502/503 exact, remaining error one green step).
+
+The live variant reuses the 16-light bridge and full-RID directional/Omni/Spot
+shadows. Modes 1/3 gate the complete local contribution once; modes 0/4 retain
+unshadowed/replacement behavior. Screen AO uses minimum in the existing AO channel,
+separate from main shadow and without face SDF. The existing shadow and five-case
+AO regression suites include E684 while retaining previous material cases.

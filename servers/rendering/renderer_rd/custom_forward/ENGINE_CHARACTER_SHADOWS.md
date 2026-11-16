@@ -165,3 +165,13 @@ while 0/4 retain their original behavior. `live_material_shadows.gd` now covers
 E669 as well as face/clothes, preserving all older cases and output markers.
 Main visible/blocked sums are 34876.3107/0; Omni/Spot 1/3 fully blocked sums are 0.
 See `CAPTURE_E669_SKIN.md` and `.renderdoc-analysis/live-skin-test.log` for evidence.
+
+## E684 accessory extension
+
+`accessory.gdshader` uses the existing 16-light bridge and `CHARACTER_ENGINE_SHADOWS`
+variant. Main visibility enters screen-shadow x once; local modes 1/3 gate their
+complete contribution once. Modes 0/4 preserve the original behavior. Reflection
+remains environment lighting, and the active captured specialization has no emission.
+AO stays separate in screen-shadow y and combines by minimum with manual AO.
+`live_material_shadows.gd` and `live_character_ao.gd` include the accessory material;
+see `CAPTURE_E684_ACCESSORIES.md` and the handoff for measured results.
