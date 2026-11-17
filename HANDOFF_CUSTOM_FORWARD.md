@@ -82,3 +82,19 @@ Debug/Release GodotSharp、编辑器工具及 `4.7.3-rc` 本地 NuGet 包。
 # 外部完整回归，从任意目录运行：
 & E:/ZcxCode/Endfield/.venv/Scripts/python.exe E:/ZcxCode/Endfield/tools/run.py regressions
 ```
+
+## frame80538 附加绘制状态（2026-11-17）
+
+Endfield 的透明头发必须使用严格 Greater；默认 GreaterEqual 会重复覆盖已有不透明头发。
+头发轮廓还要求模板位16比较。新增 opt-in spatial render modes：
+`custom_depth_greater`、`custom_depth_equal`、`custom_stencil_mask16`。
+仅 Custom Forward 在颜色阶段使用这些状态，深度预通道、默认状态、原始 Forward+ 实现保持。
+模板 mask16 同时用于 read/write/write_depth_fail，其他位保持。
+
+构建：`.venv/Scripts/python.exe -m SCons platform=windows target=editor arch=x86_64 module_mono_enabled=yes -j12`。
+项目测试 `tests/integration/additional_render_states.gd` 已验证严格深度、Equal、
+模板36/52读取、默认对照、masked write和depth-fail保留其他位。
+证据在 `.renderdoc-analysis/endfield-frame80538/stencil-transparent-20261117-121418/render-states-v2`。
+渲染状态独立复核未发现缺陷；同一证据根下 `regressions/run.json` 的54项旧回归全部通过，
+包含双管线、近接触/PCSS及历史193/249比较。888个历史证据文件哈希不变。
+项目集成说明见 Endfield 交接文档。

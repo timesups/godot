@@ -266,6 +266,8 @@ ShaderTypes::ShaderTypes() {
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("custom_character") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("custom_character_shadows") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("custom_character_ao") });
+		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("custom_depth"), "greater", "equal" });
+		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("custom_stencil_mask16") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("wireframe") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("diffuse"), "lambert", "lambert_wrap", "burley", "toon" });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("specular"), "schlick_ggx", "toon", "disabled" });

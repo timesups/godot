@@ -55,6 +55,9 @@ void SceneShaderCustomForward::ShaderData::set_code(const String &p_code) {
 	blend_mode = BLEND_MODE_MIX;
 	depth_test_disabledi = 0;
 	depth_test_invertedi = 0;
+	custom_depth_greater = 0;
+	custom_depth_equal = 0;
+	custom_stencil_mask16 = 0;
 	alpha_antialiasing_mode = ALPHA_ANTIALIASING_OFF;
 	int cull_modei = RSE::CULL_MODE_BACK;
 
@@ -112,6 +115,9 @@ void SceneShaderCustomForward::ShaderData::set_code(const String &p_code) {
 
 	actions.render_mode_values["depth_test_disabled"] = Pair<int *, int>(&depth_test_disabledi, 1);
 	actions.render_mode_values["depth_test_inverted"] = Pair<int *, int>(&depth_test_invertedi, 1);
+	actions.render_mode_values["custom_depth_greater"] = Pair<int *, int>(&custom_depth_greater, 1);
+	actions.render_mode_values["custom_depth_equal"] = Pair<int *, int>(&custom_depth_equal, 1);
+	actions.render_mode_values["custom_stencil_mask16"] = Pair<int *, int>(&custom_stencil_mask16, 1);
 
 	actions.render_mode_values["cull_disabled"] = Pair<int *, int>(&cull_modei, RSE::CULL_MODE_DISABLED);
 	actions.render_mode_values["cull_front"] = Pair<int *, int>(&cull_modei, RSE::CULL_MODE_FRONT);
@@ -359,6 +365,14 @@ void SceneShaderCustomForward::ShaderData::_create_pipeline(PipelineKey p_pipeli
 		depth_stencil_state.enable_depth_test = true;
 		depth_stencil_state.enable_depth_write = depth_draw != DEPTH_DRAW_DISABLED ? true : false;
 		depth_stencil_state.depth_compare_operator = RD::COMPARE_OP_GREATER_OR_EQUAL;
+		// Explicit captured color-pass state. Depth prepasses retain their default.
+		if (p_pipeline_key.version == PIPELINE_VERSION_COLOR_PASS) {
+			if (custom_depth_greater) {
+				depth_stencil_state.depth_compare_operator = RD::COMPARE_OP_GREATER;
+			} else if (custom_depth_equal) {
+				depth_stencil_state.depth_compare_operator = RD::COMPARE_OP_EQUAL;
+			}
+		}
 
 		if (depth_test == DEPTH_TEST_ENABLED_INVERTED) {
 			depth_stencil_state.depth_compare_operator = RD::COMPARE_OP_LESS;
@@ -378,7 +392,7 @@ void SceneShaderCustomForward::ShaderData::_create_pipeline(PipelineKey p_pipeli
 			RD::COMPARE_OP_ALWAYS,
 		};
 
-		uint32_t stencil_mask = 255;
+		uint32_t stencil_mask = custom_stencil_mask16 ? 16 : 255;
 
 		RD::PipelineDepthStencilState::StencilOperationState op;
 		op.fail = RD::STENCIL_OP_KEEP;
