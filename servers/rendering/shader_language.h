@@ -732,6 +732,8 @@ public:
 		Vector<StringName> render_modes;
 		Vector<StringName> stencil_modes;
 		int stencil_reference = -1;
+		int custom_stencil_read_mask = -1;
+		int custom_stencil_write_mask = -1;
 
 		Vector<Function> vfunctions;
 		Vector<Constant> vconstants;

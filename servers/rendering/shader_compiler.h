@@ -57,6 +57,8 @@ public:
 		HashMap<StringName, bool *> write_flag_pointers;
 		HashMap<StringName, Pair<int *, int>> stencil_mode_values;
 		int *stencil_reference = nullptr;
+		int *custom_stencil_read_mask = nullptr;
+		int *custom_stencil_write_mask = nullptr;
 
 		HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> *uniforms = nullptr;
 	};

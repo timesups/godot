@@ -486,6 +486,12 @@ String ShaderCompiler::_dump_node_code(const SL::Node *p_node, int p_level, Gene
 			if (p_actions.stencil_reference && pnode->stencil_reference != -1) {
 				*p_actions.stencil_reference = pnode->stencil_reference;
 			}
+			if (p_actions.custom_stencil_read_mask) {
+				*p_actions.custom_stencil_read_mask = pnode->custom_stencil_read_mask;
+			}
+			if (p_actions.custom_stencil_write_mask) {
+				*p_actions.custom_stencil_write_mask = pnode->custom_stencil_write_mask;
+			}
 
 			// structs
 

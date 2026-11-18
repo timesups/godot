@@ -238,7 +238,8 @@ public:
 		int depth_test_invertedi = 0;
 		int custom_depth_greater = 0;
 		int custom_depth_equal = 0;
-		int custom_stencil_mask16 = 0;
+		uint32_t stencil_read_mask = 255;
+		uint32_t stencil_write_mask = 255;
 		int alpha_antialiasing_mode = ALPHA_ANTIALIASING_OFF;
 
 		bool uses_point_size = false;

@@ -98,3 +98,13 @@ Endfield 的透明头发必须使用严格 Greater；默认 GreaterEqual 会重�
 渲染状态独立复核未发现缺陷；同一证据根下 `regressions/run.json` 的54项旧回归全部通过，
 包含双管线、近接触/PCSS及历史193/249比较。888个历史证据文件哈希不变。
 项目集成说明见 Endfield 交接文档。
+
+## A06c3 材质模板掩码（2026-11-18）
+
+空间 shader 的 `stencil_mode` 接受 `custom_read_mask(n)` 和 `custom_write_mask(n)`，参数为 0–255 的整数字面量。Custom Forward 颜色通道对前后两面应用相同状态。两侧默认 255，旧 `render_mode custom_stencil_mask16` 将两侧默认设为 16，显式掩码覆盖对应的一侧。`read` 启用比较掩码，`write` 和 `write_depth_fail` 的 Replace 操作使用写掩码。原始 Forward+ 继续使用其全字节掩码。
+
+```glsl
+stencil_mode read, write, compare_greater_or_equal, custom_read_mask(16), custom_write_mask(239), 36;
+```
+
+Endfield 项目的 `examples/stencil_masks80538.tscn` 展示上述 E542 材质与 E763 写掩码 32 的串联。专项复验使用项目的 `tools/check_stencil_masks80538.py`；项目 A06c3 报告记录二进制指纹、两条管线的实际验证和历史基线核验。

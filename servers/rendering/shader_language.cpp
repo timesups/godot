@@ -11299,6 +11299,27 @@ Error ShaderLanguage::_parse_shader_mode(bool p_is_stencil, const Vector<ModeInf
 		return ERR_PARSE_ERROR;
 	}
 
+	if (p_is_stencil && (mode == SNAME("custom_read_mask") || mode == SNAME("custom_write_mask"))) {
+		if (_get_token().type != TK_PARENTHESIS_OPEN) {
+			_set_error(RTR("Expected '(' before stencil mask value."));
+			return ERR_PARSE_ERROR;
+		}
+		Token mask = _get_token();
+		if (!mask.is_integer_constant() || mask.constant < 0 || mask.constant > 255) {
+			_set_error(RTR("Expected a stencil mask integer from 0 to 255."));
+			return ERR_PARSE_ERROR;
+		}
+		if (_get_token().type != TK_PARENTHESIS_CLOSE) {
+			_set_error(RTR("Expected ')' after stencil mask value."));
+			return ERR_PARSE_ERROR;
+		}
+		if (mode == SNAME("custom_read_mask")) {
+			shader->custom_stencil_read_mask = mask.constant;
+		} else {
+			shader->custom_stencil_write_mask = mask.constant;
+		}
+	}
+
 	if (p_is_stencil) {
 		shader->stencil_modes.push_back(mode);
 	} else {

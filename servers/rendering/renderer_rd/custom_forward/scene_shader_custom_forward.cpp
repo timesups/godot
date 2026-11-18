@@ -57,7 +57,9 @@ void SceneShaderCustomForward::ShaderData::set_code(const String &p_code) {
 	depth_test_invertedi = 0;
 	custom_depth_greater = 0;
 	custom_depth_equal = 0;
-	custom_stencil_mask16 = 0;
+	int custom_stencil_mask16 = 0;
+	int read_mask = -1;
+	int write_mask = -1;
 	alpha_antialiasing_mode = ALPHA_ANTIALIASING_OFF;
 	int cull_modei = RSE::CULL_MODE_BACK;
 
@@ -176,6 +178,8 @@ void SceneShaderCustomForward::ShaderData::set_code(const String &p_code) {
 	actions.stencil_mode_values["compare_always"] = Pair<int *, int>(&stencil_comparei, STENCIL_COMPARE_ALWAYS);
 
 	actions.stencil_reference = &stencil_referencei;
+	actions.custom_stencil_read_mask = &read_mask;
+	actions.custom_stencil_write_mask = &write_mask;
 
 	actions.uniforms = &uniforms;
 
@@ -221,6 +225,9 @@ void SceneShaderCustomForward::ShaderData::set_code(const String &p_code) {
 	stencil_flags = stencil_readi | stencil_writei | stencil_write_depth_faili;
 	stencil_compare = StencilCompare(stencil_comparei);
 	stencil_reference = stencil_referencei;
+	const int default_mask = custom_stencil_mask16 ? 16 : 255;
+	stencil_read_mask = read_mask >= 0 ? read_mask : default_mask;
+	stencil_write_mask = write_mask >= 0 ? write_mask : default_mask;
 
 #if 0
 	print_line("**compiling shader:");
@@ -392,8 +399,6 @@ void SceneShaderCustomForward::ShaderData::_create_pipeline(PipelineKey p_pipeli
 			RD::COMPARE_OP_ALWAYS,
 		};
 
-		uint32_t stencil_mask = custom_stencil_mask16 ? 16 : 255;
-
 		RD::PipelineDepthStencilState::StencilOperationState op;
 		op.fail = RD::STENCIL_OP_KEEP;
 		op.pass = RD::STENCIL_OP_KEEP;
@@ -404,17 +409,17 @@ void SceneShaderCustomForward::ShaderData::_create_pipeline(PipelineKey p_pipeli
 		op.reference = stencil_reference;
 
 		if (stencil_flags & STENCIL_FLAG_READ) {
-			op.compare_mask = stencil_mask;
+			op.compare_mask = stencil_read_mask;
 		}
 
 		if (stencil_flags & STENCIL_FLAG_WRITE) {
 			op.pass = RD::STENCIL_OP_REPLACE;
-			op.write_mask = stencil_mask;
+			op.write_mask = stencil_write_mask;
 		}
 
 		if (stencil_flags & STENCIL_FLAG_WRITE_DEPTH_FAIL) {
 			op.depth_fail = RD::STENCIL_OP_REPLACE;
-			op.write_mask = stencil_mask;
+			op.write_mask = stencil_write_mask;
 		}
 
 		depth_stencil_state.front_op = op;
