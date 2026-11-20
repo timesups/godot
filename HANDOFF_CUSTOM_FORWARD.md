@@ -112,3 +112,5 @@ Endfield 项目的 `examples/stencil_masks80538.tscn` 展示上述 E542 材质�
 Custom Forward 支持在 PRE_TRANSPARENT 合成回调中调用 RenderDataRD.custom_forward_after_transparent_priority，在当前帧指定材质优先级绘制完毕后访问视口附件。Endfield A23 在优先级 0、6、8 之后执行环境绘制，并验证随后的角色混合。证据位于项目 docs/RESTORATION_A23.md 和 docs/a23/viewport-pixels.json。
 
 A23 的捕获视口在 PRE_TRANSPARENT 使用 RenderDataRD.custom_forward_set_transparent_framebuffer 选取同尺寸的 R11G11B10 颜色附件并复用视口深度模板。环境桥和实时角色按优先级在该附件混合，最后一个回调将结果写回视口。28 个角色域 HDR 检查点与 A22 连续链相同。原 Forward+ 继续由双管线 smoke 覆盖。数值范围及 A24 入口见 Endfield 项目 docs/RESTORATION_A23.md、docs/RESTORATION_ROADMAP.md。
+
+A23 回归中的 37917 展示在完成验证后挂于 WorkerThreadPool::exit_languages_threads 的第一道等待。16 个工作线程都在等新任务，未在排队任务排空后重新确认空闲。线程池在语言关闭准备阶段处理完任务、两个队列均空时唤醒尚未确认的线程。修正后同一展示连续两次通过并正常退出，详见项目 A23 专项。

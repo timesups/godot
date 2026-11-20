@@ -175,6 +175,17 @@ void WorkerThreadPool::_process_task(Task *p_task) {
 			}
 		}
 
+		// Idle workers may have observed queued work at the pre-exit broadcast.
+		// Once the queues drain, let them recheck the language shutdown barrier.
+		if (unlikely(runlevel == RUNLEVEL_PRE_EXIT_LANGUAGES) && !task_queue.first() && !low_priority_task_queue.first()) {
+			for (ThreadData &thread : threads) {
+				if (!thread.pre_exited_languages) {
+					thread.cond_var.notify_one();
+					thread.signaled = true;
+				}
+			}
+		}
+
 		task_mutex.unlock();
 	}
 
