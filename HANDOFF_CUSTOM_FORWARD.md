@@ -11,7 +11,8 @@
   近接触修复 `e53eb25730` 和斜面 PCSS 修复 `7b8ce796b2` 保持不变；原始 Forward+ 不变。
 - `tests/rendering/custom_forward` 保留独立最小 smoke 项目，构建引擎不依赖 Endfield。
   原完整测试全部迁入 Endfield，测试逻辑、阈值和历史基线保留。
-- 证据仍在本仓库忽略目录 `.renderdoc-analysis`，未移动。不要清理其中素材和历史基线。
+- 2026-11-20：证据实体已移至独立 `D:/ZCXCode/EndfieldData`。旧 `.renderdoc-analysis` 仅为兼容历史配置的目录联接；不要删除其目标或清理素材与历史基线。
+- `debug_custom_forward.bat` 默认不依赖捕获素材；可显式传 `--post-lut=<绝对路径>` 验证后处理。
 - 项目本机配置在 Endfield 的忽略文件 `config.local.json`，指定引擎可执行文件、证据根目录；
   只有生产后处理 GLSL 回放额外需要显式引擎源码路径。
 
@@ -114,3 +115,5 @@ Custom Forward 支持在 PRE_TRANSPARENT 合成回调中调用 RenderDataRD.cust
 A23 的捕获视口在 PRE_TRANSPARENT 使用 RenderDataRD.custom_forward_set_transparent_framebuffer 选取同尺寸的 R11G11B10 颜色附件并复用视口深度模板。环境桥和实时角色按优先级在该附件混合，最后一个回调将结果写回视口。28 个角色域 HDR 检查点与 A22 连续链相同。原 Forward+ 继续由双管线 smoke 覆盖。数值范围及 A24 入口见 Endfield 项目 docs/RESTORATION_A23.md、docs/RESTORATION_ROADMAP.md。
 
 A23 回归中的 37917 展示在完成验证后挂于 WorkerThreadPool::exit_languages_threads 的第一道等待。16 个工作线程都在等新任务，未在排队任务排空后重新确认空闲。线程池在语言关闭准备阶段处理完任务、两个队列均空时唤醒尚未确认的线程。修正后同一展示连续两次通过并正常退出，详见项目 A23 专项。
+
+分离验证：项目双管线 smoke（`Endfield/artifacts/20261120-141510-500696`）及新数据路径的 19 部件展示、C# 构建、素材校验（`Endfield/artifacts/20261120-141550-690258`）通过。引擎调试 BAT 退出码 0 且有 RENDER_SMOKE_OK，但 --debug 日志报告系统 RenderDoc 注册的 capturef.json 不存在，故不记为无 ERROR 的完整通过。此次未重跑完整 54 项或重建历史阴影基线。
