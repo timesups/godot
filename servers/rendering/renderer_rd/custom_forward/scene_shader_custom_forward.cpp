@@ -802,6 +802,7 @@ void SceneShaderCustomForward::init(const String p_defines) {
 		actions.renames["CUSTOM1"] = "custom1_attrib";
 		actions.renames["CUSTOM2"] = "custom2_attrib";
 		actions.renames["CUSTOM3"] = "custom3_attrib";
+		actions.renames["custom_forward_compare_depth"] = "custom_forward_compare_depth";
 		actions.renames["custom_forward_local_shadow"] = "custom_forward_local_shadow";
 		actions.renames["custom_forward_screen_ao"] = "custom_forward_screen_ao";
 		actions.render_mode_defines["custom_character_ao"] = "#define CUSTOM_CHARACTER_AO_USED\n";

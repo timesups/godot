@@ -1032,6 +1032,14 @@ layout(set = MATERIAL_UNIFORM_SET, binding = 0, std140) uniform MaterialUniforms
 /* clang-format on */
 #endif
 
+float custom_forward_compare_depth(texture2D depth_texture, vec3 uv_depth) {
+#ifndef MODE_RENDER_DEPTH
+	return textureLod(sampler2DShadow(depth_texture, shadow_sampler), uv_depth, 0.0);
+#else
+	return 1.0;
+#endif
+}
+
 #GLOBALS
 
 #ifdef MODE_RENDER_DEPTH

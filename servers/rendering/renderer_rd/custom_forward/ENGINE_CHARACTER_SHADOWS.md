@@ -45,6 +45,14 @@ is not edited. Updates to that upstream evaluation should also be checked agains
 this copied helper. Current GPU tests exercise the hard-shadow/PCF path; soft
 penumbra quality and multiview are not validated.
 
+A Custom Forward fragment shader can sample a material-provided depth atlas with
+`custom_forward_compare_depth(sampler2D depth_texture, vec3 uv_depth)`.
+The texture must be a sampled depth texture. XY are normalized atlas coordinates
+and Z is the comparison reference. The color pass uses the renderer's linear,
+strict greater-than comparison sampler at LOD zero. Depth passes return one.
+The A23 capture camera uses this operation for the nine tent-filter taps on the
+two generated D16 spotlight tiles.
+
 Live hair applies engine visibility in modes 1 and 3. Mode 0 remains unshadowed
 and mode 4 retains its captured replacement behavior. Geometry normals supply
 shadow bias. `engine_local_shadows_enabled=false` restores the manual atlas/

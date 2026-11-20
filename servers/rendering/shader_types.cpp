@@ -254,6 +254,15 @@ ShaderTypes::ShaderTypes() {
 		shader_modes[RSE::SHADER_SPATIAL].functions["fragment"].stage_functions["custom_forward_screen_ao"] = func;
 	}
 
+	{
+		ShaderLanguage::StageFunctionInfo func;
+		func.skip_function = "vertex";
+		func.return_type = ShaderLanguage::TYPE_FLOAT;
+		func.arguments.push_back(ShaderLanguage::StageFunctionInfo::Argument("depth_texture", ShaderLanguage::TYPE_SAMPLER2D));
+		func.arguments.push_back(ShaderLanguage::StageFunctionInfo::Argument("uv_depth", ShaderLanguage::TYPE_VEC3));
+		shader_modes[RSE::SHADER_SPATIAL].functions["fragment"].stage_functions["custom_forward_compare_depth"] = func;
+	}
+
 	// spatial render modes
 	{
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("blend"), "mix", "add", "sub", "mul", "premul_alpha" });
