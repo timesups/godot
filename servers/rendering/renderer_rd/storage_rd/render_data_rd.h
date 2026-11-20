@@ -44,6 +44,8 @@ protected:
 public:
 	RBMap<int, Vector<Callable>> transparent_callbacks;
 	bool collecting_transparent_callbacks = false;
+	RID transparent_framebuffer;
+	void custom_forward_set_transparent_framebuffer(RID p_framebuffer);
 	void custom_forward_after_transparent_priority(int p_priority, const Callable &p_callback) {
 		ERR_FAIL_COND_MSG(!collecting_transparent_callbacks, "Register during the Custom Forward pre-transparent compositor callback.");
 		ERR_FAIL_COND(p_priority < RSE::MATERIAL_RENDER_PRIORITY_MIN || p_priority > RSE::MATERIAL_RENDER_PRIORITY_MAX);

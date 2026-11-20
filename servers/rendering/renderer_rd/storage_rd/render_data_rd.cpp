@@ -32,6 +32,15 @@
 
 #include "core/object/class_db.h"
 
+#include "servers/rendering/rendering_device.h"
+
+void RenderDataRD::custom_forward_set_transparent_framebuffer(RID p_framebuffer) {
+	ERR_FAIL_COND(!collecting_transparent_callbacks);
+	ERR_FAIL_COND(!RD::get_singleton()->framebuffer_is_valid(p_framebuffer));
+	transparent_framebuffer = p_framebuffer;
+}
+
 void RenderDataRD::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("custom_forward_set_transparent_framebuffer", "framebuffer"), &RenderDataRD::custom_forward_set_transparent_framebuffer);
 	ClassDB::bind_method(D_METHOD("custom_forward_after_transparent_priority", "priority", "callback"), &RenderDataRD::custom_forward_after_transparent_priority);
 }

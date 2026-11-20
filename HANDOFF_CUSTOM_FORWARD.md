@@ -110,3 +110,5 @@ stencil_mode read, write, compare_greater_or_equal, custom_read_mask(16), custom
 Endfield 项目的 `examples/stencil_masks80538.tscn` 展示上述 E542 材质与 E763 写掩码 32 的串联。专项复验使用项目的 `tools/check_stencil_masks80538.py`；项目 A06c3 报告记录二进制指纹、两条管线的实际验证和历史基线核验。
 
 Custom Forward 支持在 PRE_TRANSPARENT 合成回调中调用 RenderDataRD.custom_forward_after_transparent_priority，在当前帧指定材质优先级绘制完毕后访问视口附件。Endfield A23 在优先级 0、6、8 之后执行环境绘制，并验证随后的角色混合。证据位于项目 docs/RESTORATION_A23.md 和 docs/a23/viewport-pixels.json。
+
+A23 的捕获视口在 PRE_TRANSPARENT 使用 RenderDataRD.custom_forward_set_transparent_framebuffer 选取同尺寸的 R11G11B10 颜色附件并复用视口深度模板。环境桥和实时角色按优先级在该附件混合，最后一个回调将结果写回视口。28 个角色域 HDR 检查点与 A22 连续链相同。原 Forward+ 继续由双管线 smoke 覆盖。数值范围及 A24 入口见 Endfield 项目 docs/RESTORATION_A23.md、docs/RESTORATION_ROADMAP.md。
