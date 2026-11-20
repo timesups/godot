@@ -2412,7 +2412,9 @@ void RenderCustomForward::_render_scene(RenderDataRD *p_render_data, const Color
 		}
 
 		RENDER_TIMESTAMP("Process Pre Transparent Compositor Effects");
+		p_render_data->collecting_transparent_callbacks = true;
 		_process_compositor_effects(RSE::COMPOSITOR_EFFECT_CALLBACK_TYPE_PRE_TRANSPARENT, p_render_data);
+		p_render_data->collecting_transparent_callbacks = false;
 	}
 
 	RENDER_TIMESTAMP("Render 3D Transparent Pass");
@@ -2430,7 +2432,34 @@ void RenderCustomForward::_render_scene(RenderDataRD *p_render_data, const Color
 
 		RID alpha_framebuffer = rb_data.is_valid() ? rb_data->get_color_pass_fb(transparent_color_pass_flags) : color_only_framebuffer;
 		RenderListParameters render_list_params(render_list[RENDER_LIST_ALPHA].elements.ptr(), render_list[RENDER_LIST_ALPHA].element_info.ptr(), render_list[RENDER_LIST_ALPHA].elements.size(), reverse_cull, PASS_MODE_COLOR, transparent_color_pass_flags, rb_data.is_null(), p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, p_render_data->scene_data->view_count, 0, base_specialization);
-		_render_list_with_draw_list(&render_list_params, alpha_framebuffer, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 0.0f, 0u, p_render_data->render_region);
+		if (p_render_data->transparent_callbacks.is_empty()) {
+			_render_list_with_draw_list(&render_list_params, alpha_framebuffer, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 0.0f, 0u, p_render_data->render_region);
+		} else {
+			auto format = RD::get_singleton()->framebuffer_get_format(alpha_framebuffer);
+			render_list_params.framebuffer_format = format;
+			int first = 0;
+			auto draw_until = [&](int end) {
+				if (first == end) {
+					return;
+				}
+				auto list = RD::get_singleton()->draw_list_begin(alpha_framebuffer, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 0.0f, 0u, p_render_data->render_region);
+				_render_list(list, format, &render_list_params, first, end);
+				RD::get_singleton()->draw_list_end();
+				first = end;
+			};
+			for (const KeyValue<int, Vector<Callable>> &entry : p_render_data->transparent_callbacks) {
+				int end = first;
+				while (end < render_list_params.element_count && int(render_list_params.elements[end]->sort.priority) <= entry.key - RSE::MATERIAL_RENDER_PRIORITY_MIN) {
+					++end;
+				}
+				draw_until(end);
+				for (const Callable &callback : entry.value) {
+					callback.call(p_render_data);
+				}
+			}
+			draw_until(render_list_params.element_count);
+			p_render_data->transparent_callbacks.clear();
+		}
 	}
 
 	RD::get_singleton()->draw_command_end_label();

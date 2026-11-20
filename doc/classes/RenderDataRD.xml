@@ -9,4 +9,14 @@
 	</description>
 	<tutorials>
 	</tutorials>
+	<methods>
+		<method name="custom_forward_after_transparent_priority">
+			<return type="void" />
+			<param index="0" name="priority" type="int" />
+			<param index="1" name="callback" type="Callable" />
+			<description>
+				During the Custom Forward pre-transparent compositor callback, schedules [param callback] for this render. The callback receives this render data after transparent surfaces up to and including [param priority] have been drawn. Callbacks at equal priority run in registration order.
+			</description>
+		</method>
+	</methods>
 </class>

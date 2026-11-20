@@ -38,7 +38,19 @@
 class RenderDataRD : public RenderData {
 	GDCLASS(RenderDataRD, RenderData);
 
+protected:
+	static void _bind_methods();
+
 public:
+	RBMap<int, Vector<Callable>> transparent_callbacks;
+	bool collecting_transparent_callbacks = false;
+	void custom_forward_after_transparent_priority(int p_priority, const Callable &p_callback) {
+		ERR_FAIL_COND_MSG(!collecting_transparent_callbacks, "Register during the Custom Forward pre-transparent compositor callback.");
+		ERR_FAIL_COND(p_priority < RSE::MATERIAL_RENDER_PRIORITY_MIN || p_priority > RSE::MATERIAL_RENDER_PRIORITY_MAX);
+		ERR_FAIL_COND(!p_callback.is_valid());
+		transparent_callbacks[p_priority].push_back(p_callback);
+	}
+
 	// Access methods to expose data externally
 	virtual Ref<RenderSceneBuffers> get_render_scene_buffers() const override { return render_buffers; }
 	virtual RenderSceneData *get_render_scene_data() const override { return scene_data; }
